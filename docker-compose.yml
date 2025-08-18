@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  mongodb-dr-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mongodb-dr-simulator.rule=Host(`localhost`)"
+      - "traefik.http.services.mongodb-dr-simulator.loadbalancer.server.port=3000"
