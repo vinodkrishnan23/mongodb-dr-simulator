@@ -8,17 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "deploy:local": "./scripts/deploy-local.sh",
-    "docker:build": "docker build -t mongodb-dr-simulator:latest .",
-    "docker:run": "docker run -d -p 3000:3000 --name mongodb-dr-simulator mongodb-dr-simulator:latest",
-    "docker:dev": "docker-compose --profile development up -d mongodb-dr-simulator-dev",
-    "docker:prod": "docker-compose up -d mongodb-dr-simulator",
-    "docker:proxy": "docker-compose --profile proxy up -d",
-    "docker:stop": "docker-compose down",
-    "docker:logs": "docker-compose logs -f",
-    "docker:health": "docker exec mongodb-dr-simulator node healthcheck.js",
-    "docker:shell": "docker exec -it mongodb-dr-simulator sh",
-    "docker:clean": "docker system prune -f && docker volume prune -f"
+    "docker:build": "docker build -t mongodb-dr-simulator .",
+    "docker:run": "docker run -d -p 8080:8080 --name mongodb-dr-simulator mongodb-dr-simulator"
   },
   "dependencies": {
     "next": "^15.0.0",

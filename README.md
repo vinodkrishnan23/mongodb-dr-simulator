@@ -61,86 +61,39 @@ This simulator helps you understand:
 - `npm run type-check` - Run TypeScript type checking
 
 #### Docker Scripts
-- `npm run docker:build` - Build production Docker image
-- `npm run docker:run` - Run single container
-- `npm run docker:dev` - Start development with hot reload
-- `npm run docker:prod` - Start production services
-- `npm run docker:proxy` - Start with Nginx reverse proxy
-- `npm run docker:stop` - Stop all services
-- `npm run docker:logs` - View container logs
-- `npm run docker:health` - Check application health
-- `npm run docker:shell` - Access container shell
-- `npm run docker:clean` - Clean Docker system
+- `npm run docker:build` - Build Docker image
+- `npm run docker:run` - Run container on port 8080
 
 ## 🐳 Docker Deployment
 
-The application includes enterprise-ready Docker configuration with multiple deployment options.
+Simple Docker setup for the MongoDB DR Simulator.
 
-### **Quick Start - Production**
+### **Build and Run**
 
 ```bash
-# Build and start production services
-npm run docker:prod
+# Build the image
+npm run docker:build
 
-# Access application
-open http://localhost:3000
+# Run the container  
+npm run docker:run
+
+# Access the application
+open http://localhost:8080
 ```
 
-### **Quick Start - Development**
+### **Manual Commands**
 
 ```bash
-# Start development with hot reload
-npm run docker:dev
-
-# Access development server
-open http://localhost:3001
-```
-
-### **Enterprise Deployment with Proxy**
-
-```bash
-# Start full stack with Nginx reverse proxy
-npm run docker:proxy
-
-# Access through proxy (with SSL/load balancing)
-open http://localhost
-```
-
-### **Manual Docker Commands**
-
-```bash
-# Build image manually
+# Build manually
 docker build -t mongodb-dr-simulator .
 
-# Run container manually
-docker run -d -p 3000:3000 --name mongodb-dr-simulator mongodb-dr-simulator
+# Run manually
+docker run -d -p 8080:8080 --name mongodb-dr-simulator mongodb-dr-simulator
 
-# Use Docker Compose for full deployment
-docker-compose up -d
+# Stop the container
+docker stop mongodb-dr-simulator
+docker rm mongodb-dr-simulator
 ```
-
-### **Docker Features**
-
-- ✅ **Multi-stage builds** for optimized production images
-- ✅ **Node.js 20 Alpine** for latest features and security
-- ✅ **Non-root user** execution for enhanced security
-- ✅ **Health checks** with fallback endpoints
-- ✅ **Resource limits** and security hardening
-- ✅ **Development hot reload** support
-- ✅ **Nginx reverse proxy** with SSL/TLS support
-- ✅ **Container orchestration** ready
-
-### **Production Configuration**
-
-The Docker setup includes:
-
-- **Security**: Non-root user, security updates, minimal attack surface
-- **Performance**: Multi-stage builds, layer caching, resource optimization
-- **Monitoring**: Health checks, logging, metrics-ready
-- **Scalability**: Kubernetes-ready, load balancer support
-- **Development**: Hot reload, volume mounts, debug access
-
-For detailed deployment instructions, see [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
 
 ## 📋 Scenarios
 
