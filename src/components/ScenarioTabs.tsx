@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Shield, Globe } from 'lucide-react';
+import { Database, Shield, Globe, GitBranch, RefreshCw, HardDrive } from 'lucide-react';
 import { ScenarioTabsProps, ScenarioType } from '@/types';
 
 const ScenarioTabs: React.FC<ScenarioTabsProps> = ({ 
@@ -17,16 +17,37 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
     {
       id: ScenarioType.ENHANCED_DR,
       name: 'Enhanced DR',
-      description: '5 Nodes: 2 DC + 3 DR',
+      description: '5 Nodes: 2 DC + 3 DR (2 Read-Only)',
       icon: <Shield className="w-5 h-5" />,
       color: 'green',
     },
     {
       id: ScenarioType.MULTI_DC,
-      name: 'Multi-DC',
+      name: 'Highly Available',
       description: '5 Nodes: 2 DC1 + 2 DC2 + 1 DR',
       icon: <Globe className="w-5 h-5" />,
       color: 'purple',
+    },
+    {
+      id: ScenarioType.ENHANCED_2_STEP,
+      name: '2-Step Recovery',
+      description: '4 Nodes: 2 DC + 2 DR (1 Read-Only)',
+      icon: <GitBranch className="w-5 h-5" />,
+      color: 'yellow',
+    },
+    {
+      id: ScenarioType.HOT_STANDBY,
+      name: 'Hot Standby',
+      description: '6 Nodes: 2 Independent Clusters + Sync',
+      icon: <RefreshCw className="w-5 h-5" />,
+      color: 'red',
+    },
+    {
+      id: ScenarioType.COLD_STANDBY,
+      name: 'Cold Standby',
+      description: '3 Nodes: DC Cluster + Backup',
+      icon: <HardDrive className="w-5 h-5" />,
+      color: 'orange',
     },
   ];
 
@@ -41,6 +62,12 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
           return 'bg-green-100 border-green-500 text-green-700';
         case 'purple':
           return 'bg-purple-100 border-purple-500 text-purple-700';
+        case 'yellow':
+          return 'bg-yellow-100 border-yellow-500 text-yellow-700';
+        case 'red':
+          return 'bg-red-100 border-red-500 text-red-700';
+        case 'orange':
+          return 'bg-orange-100 border-orange-500 text-orange-700';
         default:
           return 'bg-gray-100 border-gray-500 text-gray-700';
       }
@@ -60,6 +87,12 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
           return 'text-green-600';
         case 'purple':
           return 'text-purple-600';
+        case 'yellow':
+          return 'text-yellow-600';
+        case 'red':
+          return 'text-red-600';
+        case 'orange':
+          return 'text-orange-600';
         default:
           return 'text-gray-600';
       }
@@ -80,7 +113,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
       </div>
 
       <div className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {scenarios.map((scenario) => (
             <button
               key={scenario.id}

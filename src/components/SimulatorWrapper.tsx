@@ -16,6 +16,7 @@ import { scenarios } from '@/utils/scenarios';
 import { 
   calculateClusterStatus,
   failRegion,
+  failRegionWithBackup,
   electNewPrimary,
   createLogEvent,
   getFailureActions,
@@ -23,12 +24,19 @@ import {
   reconfigureStandalone,
   addNewNodesToDR,
   grantVotingRights,
+  grantVotingRightsStep1,
+  addNewNodeStep2,
+  repointApplicationToDR,
+  restoreFromBackup,
+  progressBackupRestore,
 } from '@/utils/simulation';
 
 import ScenarioTabs from './ScenarioTabs';
 import ArchitectureDiagram from './ArchitectureDiagram';
 import ControlPanel from './ControlPanel';
 import EventLog from './EventLog';
+import RecoveryInfo from './RecoveryInfo';
+import ProgressBar from './ProgressBar';
 
 const SimulatorWrapper: React.FC = () => {
   const [simulationState, setSimulationState] = useState<SimulationState>(() => {
@@ -39,17 +47,26 @@ const SimulatorWrapper: React.FC = () => {
       currentScenario: initialScenario,
       phase: SimulationPhase.INITIAL,
       nodes: [...scenario.nodes],
-      logs: [
-        createLogEvent(
-          EventType.INITIALIZATION,
-          `Initialized ${scenario.name} scenario`,
-          scenario.description
-        ),
-      ],
+      logs: [], // Start with empty logs to prevent hydration mismatch
       availableActions: [],
-      clusterStatus: calculateClusterStatus(scenario.nodes),
+      clusterStatus: calculateClusterStatus(scenario.nodes, initialScenario),
     };
   });
+
+  // Add initial log event after component mounts (client-side only) to prevent hydration mismatch
+  useEffect(() => {
+    const currentScenario = scenarios[simulationState.currentScenario];
+    setSimulationState(prevState => ({
+      ...prevState,
+      logs: prevState.logs.length === 0 ? [
+        createLogEvent(
+          EventType.INITIALIZATION,
+          `Initialized ${currentScenario.name} scenario`,
+          currentScenario.description
+        ),
+      ] : prevState.logs,
+    }));
+  }, []); // Only run once on mount
 
   // Update available actions based on current state
   const updateAvailableActions = useCallback((
@@ -97,6 +114,25 @@ const SimulatorWrapper: React.FC = () => {
         action: handleReset,
         variant: 'secondary',
       });
+    } else if (phase === SimulationPhase.STEP_1_COMPLETE) {
+      // Add Step 2 recovery actions for Enhanced 2-Step scenario
+      const recoveryActions = getRecoveryActions(scenario, nodes);
+      recoveryActions.forEach(action => {
+        actions.push({
+          id: action.id,
+          label: action.label,
+          action: () => handleRecoveryAction(action.action, action.id),
+          variant: 'warning',
+        });
+      });
+
+      // Add reset action
+      actions.push({
+        id: 'reset',
+        label: 'Reset Simulation',
+        action: handleReset,
+        variant: 'secondary',
+      });
     } else if (phase === SimulationPhase.RECOVERED) {
       actions.push({
         id: 'reset',
@@ -113,7 +149,7 @@ const SimulatorWrapper: React.FC = () => {
   const handleScenarioChange = useCallback((newScenario: ScenarioType) => {
     const scenario = scenarios[newScenario];
     const initialNodes = [...scenario.nodes];
-    const clusterStatus = calculateClusterStatus(initialNodes);
+    const clusterStatus = calculateClusterStatus(initialNodes, newScenario);
     
     setSimulationState({
       currentScenario: newScenario,
@@ -128,6 +164,9 @@ const SimulatorWrapper: React.FC = () => {
       ],
       availableActions: updateAvailableActions(SimulationPhase.INITIAL, newScenario, initialNodes),
       clusterStatus,
+      progressPercent: undefined, // Clear any progress
+      recoveryStep: undefined, // Clear any recovery steps
+      regions: undefined, // Clear any dynamic regions
     });
   }, [updateAvailableActions]);
 
@@ -138,9 +177,21 @@ const SimulatorWrapper: React.FC = () => {
       const region = scenario.regions.find(r => r.id === regionId);
       if (!region) return prevState;
 
-      // Fail the region
-      const updatedNodes = failRegion(prevState.nodes, regionId);
-      const clusterStatus = calculateClusterStatus(updatedNodes);
+      let updatedNodes;
+      let updatedRegions = prevState.regions;
+
+      // For Cold Standby, fail both cluster and associated backup storage
+      if (prevState.currentScenario === ScenarioType.COLD_STANDBY) {
+        const allRegions = prevState.regions || scenario.regions;
+        const result = failRegionWithBackup(prevState.nodes, allRegions, regionId);
+        updatedNodes = result.updatedNodes;
+        updatedRegions = result.updatedRegions;
+      } else {
+        // For other scenarios, use regular failRegion
+        updatedNodes = failRegion(prevState.nodes, regionId);
+      }
+
+      const clusterStatus = calculateClusterStatus(updatedNodes, prevState.currentScenario);
       
       // Create log events
       const newLogs = [
@@ -192,15 +243,25 @@ const SimulatorWrapper: React.FC = () => {
         }
       }
 
-      const finalClusterStatus = calculateClusterStatus(finalNodes);
-      const newPhase = finalClusterStatus.isOperational 
-        ? SimulationPhase.INITIAL 
-        : SimulationPhase.FAILURE_OCCURRED;
+      const finalClusterStatus = calculateClusterStatus(finalNodes, prevState.currentScenario);
+      
+      // Check if recovery actions are available regardless of cluster operational status
+      const recoveryActions = getRecoveryActions(prevState.currentScenario, finalNodes);
+      const hasRecoveryActions = recoveryActions.length > 0;
+      
+      // For scenarios like Hot Standby and Enhanced 2-Step, we may need to show recovery actions 
+      // even when the cluster is operational
+      const newPhase = hasRecoveryActions 
+        ? SimulationPhase.FAILURE_OCCURRED
+        : finalClusterStatus.isOperational 
+          ? SimulationPhase.INITIAL 
+          : SimulationPhase.FAILURE_OCCURRED;
 
       return {
         ...prevState,
         phase: newPhase,
         nodes: finalNodes,
+        regions: updatedRegions,
         logs: newLogs,
         clusterStatus: finalClusterStatus,
         availableActions: updateAvailableActions(newPhase, prevState.currentScenario, finalNodes),
@@ -210,12 +271,87 @@ const SimulatorWrapper: React.FC = () => {
 
   // Handle recovery actions
   const handleRecoveryAction = useCallback((
-    action: typeof reconfigureStandalone | typeof addNewNodesToDR | typeof grantVotingRights,
+    action: any,
     actionId: string
   ) => {
+    // Handle Cold Standby restoration as a special case
+    if (actionId === 'restore-from-backup') {
+      setSimulationState(prevState => {
+        const result = restoreFromBackup(prevState.nodes);
+        
+        // Start the restoration process
+        setTimeout(() => startRestoreProgress(), 500);
+        
+        return {
+          ...prevState,
+          phase: SimulationPhase.RESTORING,
+          logs: [...prevState.logs, ...result.logEvents],
+          progressPercent: 0,
+          availableActions: [], // No actions available during restoration
+        };
+      });
+      return;
+    }
+
+    // Handle multi-step recovery for Enhanced 2-Step scenario
+    if (actionId === 'grant-voting-rights-step1') {
+      setSimulationState(prevState => {
+        const result = grantVotingRightsStep1(prevState.nodes);
+        const clusterStatus = calculateClusterStatus(result.updatedNodes, prevState.currentScenario);
+        
+        return {
+          ...prevState,
+          phase: SimulationPhase.STEP_1_COMPLETE,
+          nodes: result.updatedNodes,
+          logs: [...prevState.logs, ...result.logEvents],
+          clusterStatus,
+          recoveryStep: 1,
+          availableActions: updateAvailableActions(SimulationPhase.STEP_1_COMPLETE, prevState.currentScenario, result.updatedNodes),
+        };
+      });
+      return;
+    }
+
+    if (actionId === 'add-new-node-step2') {
+      setSimulationState(prevState => {
+        const result = addNewNodeStep2(prevState.nodes);
+        const clusterStatus = calculateClusterStatus(result.updatedNodes, prevState.currentScenario);
+        
+        return {
+          ...prevState,
+          phase: SimulationPhase.RECOVERED,
+          nodes: result.updatedNodes,
+          logs: [...prevState.logs, ...result.logEvents],
+          clusterStatus,
+          recoveryStep: 2,
+          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes),
+        };
+      });
+      return;
+    }
+
+    // Handle Hot Standby repoint action
+    if (actionId === 'repoint-application') {
+      setSimulationState(prevState => {
+        const result = repointApplicationToDR(prevState.nodes);
+        const clusterStatus = calculateClusterStatus(result.updatedNodes, prevState.currentScenario);
+        
+        return {
+          ...prevState,
+          phase: SimulationPhase.RECOVERED,
+          nodes: result.updatedNodes,
+          logs: [...prevState.logs, ...result.logEvents],
+          clusterStatus,
+          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes),
+        };
+      });
+      return;
+    }
+
+    // Handle standard recovery actions
     setSimulationState(prevState => {
       const result = action(prevState.nodes);
-      const clusterStatus = calculateClusterStatus(result.updatedNodes);
+      const clusterStatus = calculateClusterStatus(result.updatedNodes, prevState.currentScenario);
       
       const newLogs = [
         ...prevState.logs,
@@ -237,12 +373,63 @@ const SimulatorWrapper: React.FC = () => {
     });
   }, [updateAvailableActions]);
 
+  // Start restore progress for Cold Standby
+  const startRestoreProgress = useCallback(() => {
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 25;
+      
+      setSimulationState(prevState => {
+        const result = progressBackupRestore(prevState.nodes, progress);
+        const clusterStatus = calculateClusterStatus(result.updatedNodes, prevState.currentScenario);
+        
+        if (progress >= 100 && prevState.phase !== SimulationPhase.RECOVERED) {
+          clearInterval(interval);
+          
+          // Add the new restored cluster region for Cold Standby (only if it doesn't exist)
+          const newRestoredRegion = {
+            id: 'dr-cluster-restored',
+            name: 'DR Restored Cluster (Region-B)',
+            type: 'cluster' as const,
+            clusterState: 'active' as const,
+            nodes: ['restored-primary', 'restored-secondary1', 'restored-secondary2'],
+          };
+          
+          // Check if the restored region already exists to prevent duplicates
+          const existingRegions = prevState.regions || [];
+          const regionExists = existingRegions.some(region => region.id === 'dr-cluster-restored');
+          
+          const updatedRegions = regionExists 
+            ? existingRegions
+            : [...existingRegions, newRestoredRegion];
+          
+          return {
+            ...prevState,
+            phase: SimulationPhase.RECOVERED,
+            nodes: result.updatedNodes,
+            logs: [...prevState.logs, ...result.logEvents],
+            clusterStatus,
+            progressPercent: 100,
+            regions: updatedRegions,
+            availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes),
+          };
+        }
+        
+        return {
+          ...prevState,
+          logs: [...prevState.logs, ...result.logEvents],
+          progressPercent: progress,
+        };
+      });
+    }, 2000); // Update every 2 seconds
+  }, [updateAvailableActions]);
+
   // Handle reset
   const handleReset = useCallback(() => {
     setSimulationState(prevState => {
       const scenario = scenarios[prevState.currentScenario];
       const initialNodes = [...scenario.nodes];
-      const clusterStatus = calculateClusterStatus(initialNodes);
+      const clusterStatus = calculateClusterStatus(initialNodes, prevState.currentScenario);
       
       return {
         currentScenario: prevState.currentScenario, // Keep the same scenario
@@ -257,6 +444,9 @@ const SimulatorWrapper: React.FC = () => {
         ],
         availableActions: updateAvailableActions(SimulationPhase.INITIAL, prevState.currentScenario, initialNodes),
         clusterStatus,
+        progressPercent: undefined, // Clear any progress
+        recoveryStep: undefined, // Clear any recovery steps
+        regions: undefined, // Clear any dynamic regions
       };
     });
   }, [updateAvailableActions]);
@@ -291,7 +481,18 @@ const SimulatorWrapper: React.FC = () => {
             <ArchitectureDiagram
               scenario={currentScenario}
               nodes={simulationState.nodes}
+              dynamicRegions={simulationState.regions}
             />
+            
+            {/* Progress Bar for Cold Standby restoration */}
+            {simulationState.phase === SimulationPhase.RESTORING && simulationState.progressPercent !== undefined && (
+              <div className="mt-4">
+                <ProgressBar
+                  progress={simulationState.progressPercent}
+                  label="Restoring cluster from backup..."
+                />
+              </div>
+            )}
           </div>
 
           {/* Control Panel */}
@@ -299,9 +500,17 @@ const SimulatorWrapper: React.FC = () => {
             <ControlPanel
               availableActions={simulationState.availableActions}
               clusterStatus={simulationState.clusterStatus}
+              nodes={simulationState.nodes}
             />
           </div>
         </div>
+
+        {/* Recovery Approach Analysis */}
+        <RecoveryInfo
+          scenario={simulationState.currentScenario}
+          phase={simulationState.phase}
+          recoveryStep={simulationState.recoveryStep}
+        />
 
         {/* Event Log - Full width */}
         <EventLog

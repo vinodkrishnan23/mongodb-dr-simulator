@@ -1,11 +1,13 @@
 import React from 'react';
-import { MapPin, Building, Globe } from 'lucide-react';
-import { ArchitectureDiagramProps, MongoNode, Region } from '@/types';
+import { MapPin, Building, Globe, ArrowRight } from 'lucide-react';
+import { ArchitectureDiagramProps, MongoNode, Region, ScenarioType } from '@/types';
 import Node from './Node';
+import RegionCluster from './RegionCluster';
 
 const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({ 
   scenario, 
-  nodes 
+  nodes,
+  dynamicRegions
 }) => {
   const getRegionIcon = (regionType: string) => {
     switch (regionType) {
@@ -50,19 +52,62 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
     }
   };
 
-  return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-      <div className="mb-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-2">
-          {scenario.name}
-        </h3>
-        <p className="text-gray-600 text-sm">
-          {scenario.description}
-        </p>
-      </div>
+  // Combine scenario regions with any dynamic regions, with dynamic regions taking precedence
+  const allRegions = dynamicRegions && dynamicRegions.length > 0 
+    ? dynamicRegions 
+    : scenario.regions;
 
+  // Render different layouts based on scenario type
+  const renderScenarioLayout = () => {
+    if (scenario.id === ScenarioType.HOT_STANDBY) {
+      // Special layout for Hot Standby with single cluster-to-cluster sync arrow
+      return (
+        <div className="flex items-center justify-center space-x-8">
+          <div className="flex-1">
+            <RegionCluster
+              region={scenario.regions[0]}
+              nodes={nodes}
+            />
+          </div>
+          <div className="flex flex-col items-center space-y-2">
+            <ArrowRight className="w-10 h-10 text-blue-600 animate-pulse" />
+            <span className="text-sm font-bold text-blue-600">
+              Cluster-2-Cluster-Sync
+            </span>
+            <span className="text-xs text-blue-500">
+              Data Replication
+            </span>
+          </div>
+          <div className="flex-1">
+            <RegionCluster
+              region={scenario.regions[1]}
+              nodes={nodes}
+              isTarget={true}
+            />
+          </div>
+        </div>
+      );
+    }
+    
+    if (scenario.id === ScenarioType.COLD_STANDBY) {
+      // Special layout for Cold Standby with backup storage and restored cluster
+      return (
+        <div className="grid gap-6 lg:grid-cols-2 md:grid-cols-1">
+          {allRegions.map((region: Region) => (
+            <RegionCluster
+              key={region.id}
+              region={region}
+              nodes={nodes}
+            />
+          ))}
+        </div>
+      );
+    }
+    
+    // Default layout for other scenarios
+    return (
       <div className="grid gap-6 lg:grid-cols-3 md:grid-cols-2 sm:grid-cols-1">
-        {scenario.regions.map((region: Region) => {
+        {allRegions.map((region: Region) => {
           const regionNodes = getNodesForRegion(region);
           const regionStatus = getRegionStatus(regionNodes);
           
@@ -98,7 +143,6 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
                     key={node.id} 
                     node={node}
                     onClick={() => {
-                      // Optional: Add node click handler for future features
                       console.log(`Clicked node: ${node.name}`);
                     }}
                   />
@@ -130,10 +174,25 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
           );
         })}
       </div>
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+      <div className="mb-6">
+        <h3 className="text-xl font-bold text-gray-900 mb-2">
+          {scenario.name}
+        </h3>
+        <p className="text-gray-600 text-sm">
+          {scenario.description}
+        </p>
+      </div>
+
+      {renderScenarioLayout()}
 
       {/* Overall Cluster Summary */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-        <h5 className="font-semibold text-gray-900 mb-3">Cluster Overview</h5>
+        <h5 className="font-semibold text-gray-900 mb-3">DC+DR Cluster Overview</h5>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div className="text-center">
             <div className="font-semibold text-lg text-gray-900">

@@ -4,12 +4,15 @@ export enum NodeRole {
   SECONDARY = 'secondary',
   READ_ONLY = 'read_only',
   STANDALONE = 'standalone',
+  BACKUP_STORAGE = 'backup_storage',
 }
 
 export enum NodeStatus {
   UP = 'up',
   DOWN = 'down',
   RECOVERING = 'recovering',
+  PROVISIONING = 'provisioning',
+  RESTORING = 'restoring',
 }
 
 export enum VotingRights {
@@ -52,6 +55,9 @@ export enum ScenarioType {
   BASIC_DR = 'basic_dr',
   ENHANCED_DR = 'enhanced_dr',
   MULTI_DC = 'multi_dc',
+  ENHANCED_2_STEP = 'enhanced_2_step',
+  HOT_STANDBY = 'hot_standby',
+  COLD_STANDBY = 'cold_standby',
 }
 
 export interface Scenario {
@@ -65,8 +71,10 @@ export interface Scenario {
 export interface Region {
   id: string;
   name: string;
-  type: 'primary' | 'secondary' | 'dr';
+  type: 'primary' | 'secondary' | 'dr' | 'backup' | 'cluster';
   nodes: string[]; // Node IDs
+  clusterState?: 'active' | 'standby' | 'down' | 'provisioning';
+  hasSync?: boolean; // For cluster-to-cluster sync
 }
 
 // Simulation state
@@ -75,6 +83,9 @@ export enum SimulationPhase {
   FAILURE_OCCURRED = 'failure_occurred',
   RECOVERY_ACTIONS = 'recovery_actions',
   RECOVERED = 'recovered',
+  STEP_1_COMPLETE = 'step_1_complete',
+  PROVISIONING = 'provisioning',
+  RESTORING = 'restoring',
 }
 
 export interface SimulationState {
@@ -84,6 +95,9 @@ export interface SimulationState {
   logs: LogEvent[];
   availableActions: ActionButton[];
   clusterStatus: ClusterStatus;
+  recoveryStep?: number; // For multi-step recovery processes
+  progressPercent?: number; // For backup/restore operations
+  regions?: Region[]; // Dynamic regions state for advanced scenarios
 }
 
 export interface ActionButton {
@@ -94,13 +108,30 @@ export interface ActionButton {
   disabled?: boolean;
 }
 
+export interface ReplicaSetStatus {
+  name: string;
+  region: string;
+  isOperational: boolean;
+  hasQuorum: boolean;
+  canWrite: boolean;
+  votingNodes: number; // Online voting nodes
+  totalVotingNodes: number; // Total voting nodes in configuration (including failed)
+  totalNodes: number;
+  primaryNode?: string;
+  clusterState?: 'active' | 'standby' | 'down' | 'provisioning';
+}
+
 export interface ClusterStatus {
   isOperational: boolean;
   hasQuorum: boolean;
   canWrite: boolean;
-  votingNodes: number;
+  votingNodes: number; // Online voting nodes
+  totalVotingNodes: number; // Total voting nodes in configuration (including failed)
   totalNodes: number;
   primaryNode?: string;
+  // For multi-replica set scenarios (Hot Standby, Cold Standby)
+  replicaSets?: ReplicaSetStatus[];
+  scenarioType?: 'single' | 'multi' | 'backup';
 }
 
 // Recovery action types
@@ -129,11 +160,13 @@ export interface NodeProps {
 export interface ArchitectureDiagramProps {
   scenario: Scenario;
   nodes: MongoNode[];
+  dynamicRegions?: Region[];
 }
 
 export interface ControlPanelProps {
   availableActions: ActionButton[];
   clusterStatus: ClusterStatus;
+  nodes: MongoNode[];
 }
 
 export interface EventLogProps {

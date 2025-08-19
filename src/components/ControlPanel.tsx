@@ -9,11 +9,12 @@ import {
   Crown,
   Vote
 } from 'lucide-react';
-import { ControlPanelProps, ActionButton } from '@/types';
+import { ControlPanelProps, ActionButton, NodeRole } from '@/types';
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ 
   availableActions, 
-  clusterStatus 
+  clusterStatus,
+  nodes 
 }) => {
   const getStatusIcon = (isOperational: boolean, hasQuorum: boolean) => {
     if (isOperational) {
@@ -82,24 +83,48 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             </h4>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center space-x-2">
-              <Users className="w-4 h-4" />
-              <span>Quorum: {clusterStatus.hasQuorum ? 'Yes' : 'No'}</span>
+          {/* Check if we have a standalone configuration */}
+          {nodes.some(node => node.role === NodeRole.STANDALONE) ? (
+            // Standalone node display - no quorum concepts
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center space-x-2">
+                <Server className="w-4 h-4" />
+                <span>Write Capability: {clusterStatus.canWrite ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Crown className="w-4 h-4" />
+                <span>Standalone Node: Yes</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Users className="w-4 h-4" />
+                <span>Configuration: Single Node</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Activity className="w-4 h-4" />
+                <span>Replication: Disabled</span>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Server className="w-4 h-4" />
-              <span>Write Capability: {clusterStatus.canWrite ? 'Yes' : 'No'}</span>
+          ) : (
+            // Replica set display - show quorum information
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center space-x-2">
+                <Users className="w-4 h-4" />
+                <span>Quorum: {clusterStatus.hasQuorum ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Server className="w-4 h-4" />
+                <span>Write Capability: {clusterStatus.canWrite ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Vote className="w-4 h-4" />
+                <span>Voting: {clusterStatus.votingNodes}/{clusterStatus.totalVotingNodes} Online</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Crown className="w-4 h-4" />
+                <span>Primary: {clusterStatus.primaryNode ? 'Yes' : 'No'}</span>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Vote className="w-4 h-4" />
-              <span>Voting Nodes: {clusterStatus.votingNodes}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Crown className="w-4 h-4" />
-              <span>Primary: {clusterStatus.primaryNode ? 'Yes' : 'No'}</span>
-            </div>
-          </div>
+          )}
 
           {!clusterStatus.isOperational && (
             <div className="mt-3 pt-3 border-t border-current border-opacity-20">
@@ -111,33 +136,151 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               </p>
             </div>
           )}
+          
+          {clusterStatus.isOperational && clusterStatus.primaryNode && (
+            <div className="mt-3 pt-3 border-t border-current border-opacity-20">
+              <p className="text-sm font-medium">
+                {/* Check if we have a standalone configuration */}
+                {nodes.some(node => node.role === NodeRole.STANDALONE)
+                  ? '✅ Standalone node operational - reads and writes enabled (no replication)'
+                  : clusterStatus.hasQuorum && clusterStatus.votingNodes > 0
+                  ? '✅ Replica set operational with healthy quorum'
+                  : '✅ System operational'
+                }
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Detailed Status */}
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
-          <h5 className="font-semibold text-gray-900 mb-3">Detailed Status</h5>
-          <div className="space-y-2 text-sm text-gray-700">
-            <div className="flex justify-between">
-              <span>Total Nodes:</span>
-              <span className="font-medium">{clusterStatus.totalNodes}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Voting Members:</span>
-              <span className="font-medium">{clusterStatus.votingNodes}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Quorum Required:</span>
-              <span className="font-medium">
-                {Math.floor(clusterStatus.votingNodes / 2) + 1}
-              </span>
-            </div>
-            {clusterStatus.primaryNode && (
-              <div className="flex justify-between">
-                <span>Primary Node:</span>
-                <span className="font-medium">{clusterStatus.primaryNode}</span>
+          <h5 className="font-semibold text-gray-900 mb-3">
+            {clusterStatus.replicaSets ? 'Replica Sets Status' : 'Detailed Status'}
+          </h5>
+          
+          {/* Multi-replica set display for Hot Standby and Cold Standby */}
+          {clusterStatus.replicaSets ? (
+            <div className="space-y-4">
+              {clusterStatus.replicaSets.map((replicaSet, index) => (
+                <div key={replicaSet.region} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h6 className="font-medium text-gray-900">{replicaSet.name}</h6>
+                    <div className="flex items-center space-x-2">
+                      {replicaSet.clusterState && (
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                          replicaSet.clusterState === 'active' 
+                            ? 'bg-green-100 text-green-700'
+                            : replicaSet.clusterState === 'standby'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : replicaSet.clusterState === 'down'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {replicaSet.clusterState.toUpperCase()}
+                        </span>
+                      )}
+                      <span className={`text-xs font-medium ${
+                        replicaSet.isOperational ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {replicaSet.isOperational ? 'Operational' : 'Down'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                    <div className="flex justify-between">
+                      <span>Nodes:</span>
+                      <span className="font-medium">{replicaSet.totalNodes}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Write Capable:</span>
+                      <span className="font-medium">{replicaSet.canWrite ? 'Yes' : 'No'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Voting:</span>
+                      <span className="font-medium">{replicaSet.votingNodes}/{replicaSet.totalVotingNodes}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Primary:</span>
+                      <span className="font-medium">{replicaSet.primaryNode ? 'Yes' : 'No'}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {/* Overall summary */}
+              <div className="pt-3 border-t border-gray-300">
+                <div className="text-xs text-gray-500 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Total Nodes Across All Clusters:</span>
+                    <span className="font-medium">{clusterStatus.totalNodes}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Architecture:</span>
+                    <span className="font-medium">
+                      {clusterStatus.scenarioType === 'multi' ? 'Multi-Cluster' : 'Backup/Restore'}
+                    </span>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            // Single replica set display
+            <div className="space-y-2 text-sm text-gray-700">
+              <div className="flex justify-between">
+                <span>Total Nodes:</span>
+                <span className="font-medium">{clusterStatus.totalNodes}</span>
+              </div>
+              
+              {/* Show different details for standalone vs replica set */}
+              {nodes.some(node => node.role === NodeRole.STANDALONE) ? (
+                // Standalone configuration details
+                <>
+                  <div className="flex justify-between">
+                    <span>Node Type:</span>
+                    <span className="font-medium">Standalone MongoDB Instance</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Replication:</span>
+                    <span className="font-medium">None (Single Node)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>High Availability:</span>
+                    <span className="font-medium">No (No Failover)</span>
+                  </div>
+                  {clusterStatus.primaryNode && (
+                    <div className="flex justify-between">
+                      <span>Active Node:</span>
+                      <span className="font-medium">{clusterStatus.primaryNode}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // Replica set configuration details
+                <>
+                  <div className="flex justify-between">
+                    <span>Total Voting Members:</span>
+                    <span className="font-medium">{clusterStatus.totalVotingNodes}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Online Voting Members:</span>
+                    <span className="font-medium">{clusterStatus.votingNodes}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Quorum Required:</span>
+                    <span className="font-medium">
+                      {Math.floor(clusterStatus.totalVotingNodes / 2) + 1}
+                    </span>
+                  </div>
+                  {clusterStatus.primaryNode && (
+                    <div className="flex justify-between">
+                      <span>Primary Node:</span>
+                      <span className="font-medium">{clusterStatus.primaryNode}</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
