@@ -52,11 +52,95 @@ This simulator helps you understand:
    Navigate to [http://localhost:3002](http://localhost:3002) (or the port shown in your terminal)
 
 ### Available Scripts
+
+#### Development Scripts
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
 - `npm run type-check` - Run TypeScript type checking
+
+#### Docker Scripts
+- `npm run docker:build` - Build production Docker image
+- `npm run docker:run` - Run single container
+- `npm run docker:dev` - Start development with hot reload
+- `npm run docker:prod` - Start production services
+- `npm run docker:proxy` - Start with Nginx reverse proxy
+- `npm run docker:stop` - Stop all services
+- `npm run docker:logs` - View container logs
+- `npm run docker:health` - Check application health
+- `npm run docker:shell` - Access container shell
+- `npm run docker:clean` - Clean Docker system
+
+## 🐳 Docker Deployment
+
+The application includes enterprise-ready Docker configuration with multiple deployment options.
+
+### **Quick Start - Production**
+
+```bash
+# Build and start production services
+npm run docker:prod
+
+# Access application
+open http://localhost:3000
+```
+
+### **Quick Start - Development**
+
+```bash
+# Start development with hot reload
+npm run docker:dev
+
+# Access development server
+open http://localhost:3001
+```
+
+### **Enterprise Deployment with Proxy**
+
+```bash
+# Start full stack with Nginx reverse proxy
+npm run docker:proxy
+
+# Access through proxy (with SSL/load balancing)
+open http://localhost
+```
+
+### **Manual Docker Commands**
+
+```bash
+# Build image manually
+docker build -t mongodb-dr-simulator .
+
+# Run container manually
+docker run -d -p 3000:3000 --name mongodb-dr-simulator mongodb-dr-simulator
+
+# Use Docker Compose for full deployment
+docker-compose up -d
+```
+
+### **Docker Features**
+
+- ✅ **Multi-stage builds** for optimized production images
+- ✅ **Node.js 20 Alpine** for latest features and security
+- ✅ **Non-root user** execution for enhanced security
+- ✅ **Health checks** with fallback endpoints
+- ✅ **Resource limits** and security hardening
+- ✅ **Development hot reload** support
+- ✅ **Nginx reverse proxy** with SSL/TLS support
+- ✅ **Container orchestration** ready
+
+### **Production Configuration**
+
+The Docker setup includes:
+
+- **Security**: Non-root user, security updates, minimal attack surface
+- **Performance**: Multi-stage builds, layer caching, resource optimization
+- **Monitoring**: Health checks, logging, metrics-ready
+- **Scalability**: Kubernetes-ready, load balancer support
+- **Development**: Hot reload, volume mounts, debug access
+
+For detailed deployment instructions, see [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
 
 ## 📋 Scenarios
 

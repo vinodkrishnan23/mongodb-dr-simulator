@@ -7,7 +7,10 @@ import {
   X, 
   RefreshCw,
   Vote,
-  MinusCircle
+  MinusCircle,
+  Database,
+  HardDrive,
+  Loader2
 } from 'lucide-react';
 import { 
   MongoNode, 
@@ -28,6 +31,8 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         return <Eye className="w-5 h-5 text-gray-600" />;
       case NodeRole.STANDALONE:
         return <Server className="w-5 h-5 text-purple-600" />;
+      case NodeRole.BACKUP_STORAGE:
+        return <HardDrive className="w-5 h-5 text-orange-600" />;
       default:
         return <Server className="w-5 h-5 text-gray-400" />;
     }
@@ -43,6 +48,8 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         return 'Read Only';
       case NodeRole.STANDALONE:
         return 'Standalone';
+      case NodeRole.BACKUP_STORAGE:
+        return 'Backup Storage';
       default:
         return 'Unknown';
     }
@@ -56,6 +63,10 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         return <X className="w-4 h-4 text-red-500" />;
       case NodeStatus.RECOVERING:
         return <RefreshCw className="w-4 h-4 text-yellow-500 animate-spin" />;
+      case NodeStatus.PROVISIONING:
+        return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      case NodeStatus.RESTORING:
+        return <Database className="w-4 h-4 text-purple-500 animate-pulse" />;
       default:
         return <div className="w-3 h-3 bg-gray-400 rounded-full" />;
     }
@@ -69,6 +80,10 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         return 'Offline';
       case NodeStatus.RECOVERING:
         return 'Recovering';
+      case NodeStatus.PROVISIONING:
+        return 'Provisioning';
+      case NodeStatus.RESTORING:
+        return 'Restoring';
       default:
         return 'Unknown';
     }

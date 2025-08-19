@@ -1,0 +1,3 @@
+envSecrets:
+    ecr_access_key: mdb-dr-simulator
+    ecr_secret_key: mdb-dr-simulator
