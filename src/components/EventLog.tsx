@@ -38,23 +38,23 @@ const EventLog: React.FC<EventLogProps> = ({ events, maxHeight = 'max-h-96' }) =
   const getEventClasses = (type: EventType) => {
     switch (type) {
       case EventType.INITIALIZATION:
-        return 'border-l-4 border-blue-500 bg-blue-50';
+        return 'border-l-4 border-green-700 bg-white';
       case EventType.FAILURE:
-        return 'border-l-4 border-red-500 bg-red-50';
+        return 'border-l-4 border-green-800 bg-white';
       case EventType.RECOVERY_ACTION:
-        return 'border-l-4 border-purple-500 bg-purple-50';
+        return 'border-l-4 border-green-600 bg-white';
       case EventType.STATUS_CHANGE:
-        return 'border-l-4 border-gray-500 bg-gray-50';
+        return 'border-l-4 border-green-700 bg-white';
       case EventType.ELECTION:
-        return 'border-l-4 border-yellow-500 bg-yellow-50';
+        return 'border-l-4 border-green-600 bg-white';
       case EventType.QUORUM:
-        return 'border-l-4 border-orange-500 bg-orange-50';
+        return 'border-l-4 border-green-700 bg-white';
       case EventType.WARNING:
-        return 'border-l-4 border-yellow-600 bg-yellow-50';
+        return 'border-l-4 border-green-800 bg-white';
       case EventType.SUCCESS:
-        return 'border-l-4 border-green-500 bg-green-50';
+        return 'border-l-4 border-green-700 bg-white';
       default:
-        return 'border-l-4 border-gray-400 bg-gray-50';
+        return 'border-l-4 border-green-700 bg-white';
     }
   };
 
@@ -91,8 +91,8 @@ const EventLog: React.FC<EventLogProps> = ({ events, maxHeight = 'max-h-96' }) =
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200">
-      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 rounded-t-lg">
+    <div className="bg-white rounded-lg shadow-md border-2 border-green-700">
+      <div className="bg-white px-4 py-3 border-b-2 border-green-700 rounded-t-lg">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
           <Clock className="w-5 h-5 text-gray-600" />
           <span>Event Log</span>

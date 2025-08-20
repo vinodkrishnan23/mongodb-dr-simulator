@@ -45,15 +45,19 @@ const calculateReplicaSetStatus = (
   
   // Special case: Standalone nodes can accept writes without quorum
   const isStandaloneOperational = !!standaloneNode;
-  const isReplicaSetOperational = hasQuorum && !!primaryNode;
+  // Replica set is operational if it has quorum (can elect primary) OR if it's standalone
+  const isReplicaSetOperational = hasQuorum;
   const isOperational = isStandaloneOperational || isReplicaSetOperational;
   
+  // Write capability requires either standalone or a primary with quorum
+  const canWrite = isStandaloneOperational || (hasQuorum && !!primaryNode);
+
   return {
     name,
     region,
     isOperational,
     hasQuorum: isStandaloneOperational ? true : hasQuorum,
-    canWrite: isOperational,
+    canWrite,
     votingNodes: votingNodes.length,
     totalVotingNodes,
     totalNodes: nodes.length,
@@ -63,7 +67,7 @@ const calculateReplicaSetStatus = (
 };
 
 // Enhanced cluster status calculation that handles multi-replica set scenarios
-export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: ScenarioType): ClusterStatus => {
+export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: ScenarioType, dynamicRegions?: any[]): ClusterStatus => {
   // Determine if this is a multi-replica set scenario
   const isHotStandby = scenarioType === ScenarioType.HOT_STANDBY;
   const isColdStandby = scenarioType === ScenarioType.COLD_STANDBY;
@@ -73,18 +77,30 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
     const dcNodes = nodes.filter(node => node.region === 'dc-cluster');
     const drNodes = nodes.filter(node => node.region === 'dr-cluster');
     
+    // Calculate DC cluster status - down only when it loses quorum, not just when any node is down
+    const dcUpVotingNodes = dcNodes.filter(
+      node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTER
+    );
+    const dcTotalVotingNodes = dcNodes.filter(node => node.votingRights === VotingRights.VOTER).length;
+    const dcHasQuorum = dcUpVotingNodes.length > dcTotalVotingNodes / 2;
+    
     const dcStatus = calculateReplicaSetStatus(
       'DC Cluster',
       'dc-cluster', 
       dcNodes,
-      dcNodes.every(n => n.status === NodeStatus.DOWN) ? 'down' : 'active'
+      dcHasQuorum ? 'active' : 'down'
     );
+    
+    // DR cluster state: check dynamic regions first, fallback to 'standby'
+    // It only becomes 'active' when user manually repoints application
+    const drRegion = dynamicRegions?.find(region => region.id === 'dr-cluster');
+    const drClusterState = drRegion?.clusterState || 'standby';
     
     const drStatus = calculateReplicaSetStatus(
       'DR Cluster', 
       'dr-cluster',
       drNodes,
-      dcStatus.isOperational ? 'standby' : 'active'
+      drClusterState
     );
     
     // Overall status: operational if at least one replica set is operational
@@ -230,25 +246,68 @@ export const failRegionWithBackup = (
 };
 
 // Find new primary after failure
-export const electNewPrimary = (nodes: MongoNode[]): MongoNode[] => {
+export const electNewPrimary = (nodes: MongoNode[]): { 
+  updatedNodes: MongoNode[]; 
+  logEvents: LogEvent[]; 
+} => {
   const upVotingNodes = nodes.filter(
     node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTER
   );
   
+  const totalVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTER).length;
+  const hasQuorum = upVotingNodes.length > totalVotingNodes / 2;
+  
   // If no primary exists and we have quorum, elect a new one
   const hasPrimary = upVotingNodes.some(node => node.role === NodeRole.PRIMARY);
-  if (!hasPrimary && upVotingNodes.length > 0) {
-    const newPrimary = upVotingNodes[0];
-    return nodes.map(node => 
+  
+  if (!hasPrimary && hasQuorum) {
+    // Find the best candidate for primary (prefer secondaries over other roles)
+    const secondaryNodes = upVotingNodes.filter(node => node.role === NodeRole.SECONDARY);
+    const newPrimary = secondaryNodes.length > 0 ? secondaryNodes[0] : upVotingNodes[0];
+    
+    const updatedNodes = nodes.map(node => 
       node.id === newPrimary.id
         ? { ...node, role: NodeRole.PRIMARY }
         : node.role === NodeRole.PRIMARY
         ? { ...node, role: NodeRole.SECONDARY }
         : node
     );
+
+    const logEvents = [
+      createLogEvent(
+        EventType.ELECTION,
+        `Primary election completed: ${newPrimary.name} elected as new Primary`,
+        `Quorum available with ${upVotingNodes.length} of ${totalVotingNodes} voting members online`
+      ),
+      createLogEvent(
+        EventType.STATUS_CHANGE,
+        `Cluster remains operational with new Primary`,
+        'Automatic failover completed successfully'
+      ),
+    ];
+
+    return { updatedNodes, logEvents };
+  }
+
+  // No election possible - return original nodes with appropriate log events
+  const logEvents: LogEvent[] = [];
+  
+  if (!hasPrimary && !hasQuorum) {
+    logEvents.push(
+      createLogEvent(
+        EventType.WARNING,
+        `No quorum available for primary election`,
+        `Only ${upVotingNodes.length} of ${totalVotingNodes} voting members online (need majority)`
+      ),
+      createLogEvent(
+        EventType.FAILURE,
+        'Cluster lost write capability - no primary available',
+        'Manual recovery actions required to restore cluster functionality'
+      )
+    );
   }
   
-  return nodes;
+  return { updatedNodes: nodes, logEvents };
 };
 
 // Recovery actions for Scenario 1 (Basic DR)
@@ -565,9 +624,10 @@ export const addNewNodeStep2 = (nodes: MongoNode[]): {
 };
 
 // Recovery actions for Scenario 5 (Hot Standby)
-export const repointApplicationToDR = (nodes: MongoNode[]): {
+export const repointApplicationToDR = (nodes: MongoNode[], regions?: any[]): {
   updatedNodes: MongoNode[];
   logEvents: LogEvent[];
+  updatedRegions?: any[];
 } => {
   const drNodes = nodes.filter(node => node.region === 'dr-cluster');
   
@@ -587,6 +647,17 @@ export const repointApplicationToDR = (nodes: MongoNode[]): {
     return node;
   });
 
+  // Update regions to mark DR cluster as active and break sync
+  const updatedRegions = regions ? regions.map(region => {
+    if (region.id === 'dr-cluster') {
+      return { ...region, clusterState: 'active' };
+    }
+    if (region.id === 'dc-cluster') {
+      return { ...region, syncBroken: true };
+    }
+    return region;
+  }) : undefined;
+
   const logEvents = [
     createLogEvent(
       EventType.RECOVERY_ACTION,
@@ -599,12 +670,17 @@ export const repointApplicationToDR = (nodes: MongoNode[]): {
       'DR cluster was operational with its own primary but invisible until now'
     ),
     createLogEvent(
+      EventType.STATUS_CHANGE,
+      'DR cluster status changed from HOT STANDBY to ACTIVE',
+      'DR cluster is now serving production traffic'
+    ),
+    createLogEvent(
       EventType.SUCCESS,
       'Failover complete - DR cluster now serving production traffic with existing data'
     ),
   ];
 
-  return { updatedNodes, logEvents };
+  return { updatedNodes, logEvents, updatedRegions };
 };
 
 // Recovery actions for Scenario 6 (Cold Standby)
@@ -665,38 +741,43 @@ export const progressBackupRestore = (
       )
     );
   } else if (progressPercent === 100) {
-    // Add restored cluster nodes
-    const restoredNodes: MongoNode[] = [
-      {
-        id: 'restored-primary',
-        name: 'Restored Primary',
-        role: NodeRole.PRIMARY,
-        status: NodeStatus.UP,
-        votingRights: VotingRights.VOTER,
-        region: 'dr-cluster-restored',
-        datacenter: 'Region-B',
-      },
-      {
-        id: 'restored-secondary1',
-        name: 'Restored Secondary 1',
-        role: NodeRole.SECONDARY,
-        status: NodeStatus.UP,
-        votingRights: VotingRights.VOTER,
-        region: 'dr-cluster-restored',
-        datacenter: 'Region-B',
-      },
-      {
-        id: 'restored-secondary2',
-        name: 'Restored Secondary 2',
-        role: NodeRole.SECONDARY,
-        status: NodeStatus.UP,
-        votingRights: VotingRights.VOTER,
-        region: 'dr-cluster-restored',
-        datacenter: 'Region-B',
-      },
-    ];
+    // Check if restored nodes already exist to prevent duplicates
+    const hasRestoredNodes = nodes.some(node => node.id === 'restored-primary');
+    
+    if (!hasRestoredNodes) {
+      // Add restored cluster nodes only if they don't already exist
+      const restoredNodes: MongoNode[] = [
+        {
+          id: 'restored-primary',
+          name: 'Restored Primary',
+          role: NodeRole.PRIMARY,
+          status: NodeStatus.UP,
+          votingRights: VotingRights.VOTER,
+          region: 'dr-cluster-restored',
+          datacenter: 'Region-B',
+        },
+        {
+          id: 'restored-secondary1',
+          name: 'Restored Secondary 1',
+          role: NodeRole.SECONDARY,
+          status: NodeStatus.UP,
+          votingRights: VotingRights.VOTER,
+          region: 'dr-cluster-restored',
+          datacenter: 'Region-B',
+        },
+        {
+          id: 'restored-secondary2',
+          name: 'Restored Secondary 2',
+          role: NodeRole.SECONDARY,
+          status: NodeStatus.UP,
+          votingRights: VotingRights.VOTER,
+          region: 'dr-cluster-restored',
+          datacenter: 'Region-B',
+        },
+      ];
 
-    updatedNodes = [...nodes, ...restoredNodes];
+      updatedNodes = [...nodes, ...restoredNodes];
+    }
     
     logEvents.push(
       createLogEvent(
@@ -720,42 +801,160 @@ export const progressBackupRestore = (
   return { updatedNodes, logEvents };
 };
 
+// Recovery action for Cold Standby - Point Application to Restored Cluster
+export const pointApplicationToRestoredCluster = (nodes: MongoNode[]): {
+  updatedNodes: MongoNode[];
+  logEvents: LogEvent[];
+} => {
+  const restoredNodes = nodes.filter(node => node.region === 'dr-cluster-restored');
+  
+  if (restoredNodes.length === 0) {
+    return {
+      updatedNodes: nodes,
+      logEvents: [createLogEvent(EventType.WARNING, 'No restored cluster nodes available')],
+    };
+  }
+
+  // No changes to nodes needed - this is an application-level action
+  const updatedNodes = [...nodes];
+
+  const logEvents = [
+    createLogEvent(
+      EventType.RECOVERY_ACTION,
+      'Application pointed to restored cluster',
+      'DNS/application configuration updated to use restored cluster endpoints'
+    ),
+    createLogEvent(
+      EventType.STATUS_CHANGE,
+      'Production traffic now served by restored cluster',
+      'Restored cluster is now the active production database'
+    ),
+    createLogEvent(
+      EventType.SUCCESS,
+      'Cold standby failover complete - restored cluster serving production with backup data',
+      'Review data consistency and update monitoring to point to new cluster'
+    ),
+  ];
+
+  return { updatedNodes, logEvents };
+};
+
 // Get failure actions for each scenario
 export const getFailureActions = (scenario: ScenarioType) => {
-  switch (scenario) {
-    case ScenarioType.BASIC_DR:
-      return [
-        { id: 'fail-dr', label: 'Fail DR Region', regionId: 'dr-region' },
-        { id: 'fail-dc', label: 'Fail DC Region', regionId: 'primary-dc' },
-      ];
-    case ScenarioType.ENHANCED_DR:
-      return [
-        { id: 'fail-dr', label: 'Fail DR Region', regionId: 'dr-region' },
-        { id: 'fail-dc', label: 'Fail DC Region', regionId: 'primary-dc' },
-      ];
-    case ScenarioType.MULTI_DC:
-      return [
-        { id: 'fail-dc1', label: 'Fail DC1 (Primary\'s DC)', regionId: 'primary-dc1' },
-        { id: 'fail-dc2', label: 'Fail DC2', regionId: 'secondary-dc2' },
-        { id: 'fail-dr', label: 'Fail DR Region', regionId: 'dr-region' },
-      ];
-    case ScenarioType.ENHANCED_2_STEP:
-      return [
-        { id: 'fail-dr', label: 'Fail DR Region', regionId: 'dr-region' },
-        { id: 'fail-dc', label: 'Fail DC Region', regionId: 'primary-dc' },
-      ];
-    case ScenarioType.HOT_STANDBY:
-      return [
-        { id: 'fail-dc-cluster', label: 'Fail DC Cluster', regionId: 'dc-cluster' },
-        { id: 'fail-dr-cluster', label: 'Fail DR Cluster', regionId: 'dr-cluster' },
-      ];
-    case ScenarioType.COLD_STANDBY:
-      return [
-        { id: 'fail-dc-cluster', label: 'Fail DC Cluster', regionId: 'dc-cluster' },
-      ];
-    default:
-      return [];
+  // No failure actions - users will click on nodes directly to toggle them
+  return [];
+};
+
+// Elect new primary from a specific region/replica set
+export const electNewPrimaryInRegion = (nodes: MongoNode[], regionId: string): { 
+  updatedNodes: MongoNode[]; 
+  logEvents: LogEvent[]; 
+} => {
+  const regionNodes = nodes.filter(node => node.region === regionId);
+  const otherNodes = nodes.filter(node => node.region !== regionId);
+  
+  const upVotingNodes = regionNodes.filter(
+    node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTER
+  );
+  
+  const totalVotingNodes = regionNodes.filter(node => node.votingRights === VotingRights.VOTER).length;
+  const hasQuorum = upVotingNodes.length > totalVotingNodes / 2;
+  
+  // If no primary exists in this region and we have quorum, elect a new one
+  const hasPrimary = upVotingNodes.some(node => node.role === NodeRole.PRIMARY);
+  
+  if (!hasPrimary && hasQuorum) {
+    // Find the best candidate for primary (prefer secondaries over other roles)
+    const secondaryNodes = upVotingNodes.filter(node => node.role === NodeRole.SECONDARY);
+    const newPrimary = secondaryNodes.length > 0 ? secondaryNodes[0] : upVotingNodes[0];
+    
+    const updatedRegionNodes = regionNodes.map(node => 
+      node.id === newPrimary.id
+        ? { ...node, role: NodeRole.PRIMARY }
+        : node.role === NodeRole.PRIMARY
+        ? { ...node, role: NodeRole.SECONDARY }
+        : node
+    );
+
+    const logEvents = [
+      createLogEvent(
+        EventType.ELECTION,
+        `Primary election completed in ${regionId}: ${newPrimary.name} elected as new Primary`,
+        `Quorum available with ${upVotingNodes.length} of ${totalVotingNodes} voting members online`
+      ),
+      createLogEvent(
+        EventType.STATUS_CHANGE,
+        `${regionId} cluster remains operational with new Primary`,
+        'Automatic failover completed successfully'
+      ),
+    ];
+
+    return { updatedNodes: [...updatedRegionNodes, ...otherNodes], logEvents };
   }
+
+  // No election possible - return original nodes with appropriate log events
+  const logEvents: LogEvent[] = [];
+  
+  if (!hasPrimary && !hasQuorum) {
+    logEvents.push(
+      createLogEvent(
+        EventType.WARNING,
+        `No quorum available for primary election in ${regionId}`,
+        `Only ${upVotingNodes.length} of ${totalVotingNodes} voting members online (need majority)`
+      ),
+      createLogEvent(
+        EventType.FAILURE,
+        `${regionId} cluster lost write capability - no primary available`,
+        'Manual recovery actions required to restore cluster functionality'
+      )
+    );
+  }
+  
+  return { updatedNodes: nodes, logEvents };
+};
+
+// Toggle individual node status
+export const toggleNodeStatus = (nodes: MongoNode[], nodeId: string, scenarioType?: ScenarioType): { updatedNodes: MongoNode[], logEvents: LogEvent[] } => {
+  const logEvents: LogEvent[] = [];
+  const updatedNodes = nodes.map(node => {
+    if (node.id === nodeId) {
+      const newStatus = node.status === NodeStatus.UP ? NodeStatus.DOWN : NodeStatus.UP;
+      const statusText = newStatus === NodeStatus.UP ? 'brought online' : 'taken offline';
+      
+      logEvents.push(createLogEvent(
+        newStatus === NodeStatus.DOWN ? EventType.FAILURE : EventType.STATUS_CHANGE,
+        `Node ${node.name} ${statusText}`,
+        `Node ${node.id} in ${node.datacenter} changed status from ${node.status} to ${newStatus}`
+      ));
+
+      return { ...node, status: newStatus };
+    }
+    return node;
+  });
+
+  // Check if we need to elect a new primary after a failure
+  const failedNode = updatedNodes.find(node => node.id === nodeId);
+  const primaryDown = failedNode && 
+    failedNode.role === NodeRole.PRIMARY && 
+    failedNode.status === NodeStatus.DOWN;
+
+  let finalNodes = updatedNodes;
+  if (primaryDown) {
+    // For Hot Standby, handle elections per replica set
+    if (scenarioType === ScenarioType.HOT_STANDBY) {
+      const { updatedNodes: nodesAfterElection, logEvents: electionEvents } = 
+        electNewPrimaryInRegion(updatedNodes, failedNode.region);
+      finalNodes = nodesAfterElection;
+      logEvents.push(...electionEvents);
+    } else {
+      // For other scenarios, use global election
+      const { updatedNodes: nodesAfterElection, logEvents: electionEvents } = electNewPrimary(updatedNodes);
+      finalNodes = nodesAfterElection;
+      logEvents.push(...electionEvents);
+    }
+  }
+
+  return { updatedNodes: finalNodes, logEvents };
 };
 
 // Get recovery actions for each scenario
@@ -772,6 +971,11 @@ export const getRecoveryActions = (scenario: ScenarioType, nodes: MongoNode[]) =
   }
 
   switch (scenario) {
+    case ScenarioType.SINGLE_REGION_NO_DR:
+      // Single region with no DR - no recovery actions available
+      // The cluster relies on automatic primary election if quorum is maintained
+      return [];
+
     case ScenarioType.BASIC_DR:
       // Only show recovery actions if DC region failed
       const dcNodesFailed = nodes.filter(
@@ -853,15 +1057,19 @@ export const getRecoveryActions = (scenario: ScenarioType, nodes: MongoNode[]) =
       return [];
 
     case ScenarioType.HOT_STANDBY:
-      // Show recovery action if DC cluster failed
-      const dcClusterFailed = nodes.filter(
-        node => node.region === 'dc-cluster' && node.status === NodeStatus.DOWN
-      ).length > 0;
+      // Show recovery action only if DC cluster lost quorum (2+ nodes down)
+      const dcNodes = nodes.filter(node => node.region === 'dc-cluster');
+      const dcUpVotingNodes = dcNodes.filter(
+        node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTER
+      );
+      const dcTotalVotingNodes = dcNodes.filter(node => node.votingRights === VotingRights.VOTER).length;
+      const dcHasQuorum = dcUpVotingNodes.length > dcTotalVotingNodes / 2;
       
-      if (dcClusterFailed) {
+      // Only show recovery action when DC cluster loses quorum (cannot elect primary)
+      if (!dcHasQuorum) {
         return [
           {
-            id: 'repoint-app-to-dr',
+            id: 'repoint-application',
             label: 'Repoint Application to DR Cluster',
             action: repointApplicationToDR,
           },
@@ -870,7 +1078,21 @@ export const getRecoveryActions = (scenario: ScenarioType, nodes: MongoNode[]) =
       return [];
 
     case ScenarioType.COLD_STANDBY:
-      // Show recovery action if DC cluster failed
+      // Check if restore has been completed
+      const hasRestoredCluster = nodes.some(node => node.region === 'dr-cluster-restored');
+      
+      if (hasRestoredCluster) {
+        // After restore is complete, show action to point application
+        return [
+          {
+            id: 'point-application-to-restored',
+            label: 'Point Application to Restored Cluster',
+            action: pointApplicationToRestoredCluster,
+          },
+        ];
+      }
+      
+      // Show recovery action if DC cluster failed and no restore yet
       const dcClusterFailedCold = nodes.filter(
         node => node.region === 'dc-cluster' && node.status === NodeStatus.DOWN
       ).length > 0;

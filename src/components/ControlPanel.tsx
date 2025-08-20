@@ -38,11 +38,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
   const getStatusClasses = (isOperational: boolean, hasQuorum: boolean) => {
     if (isOperational) {
-      return 'bg-green-50 border-green-200 text-green-800';
+      return 'bg-white border-green-700 text-green-800';
     } else if (hasQuorum) {
-      return 'bg-yellow-50 border-yellow-200 text-yellow-800';
+      return 'bg-white border-green-700 text-yellow-800';
     } else {
-      return 'bg-red-50 border-red-200 text-red-800';
+      return 'bg-white border-green-700 text-red-800';
     }
   };
 
@@ -64,9 +64,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200">
+    <div className="bg-white rounded-lg shadow-md border-2 border-green-700">
       {/* Cluster Status Header */}
-      <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 rounded-t-lg">
+      <div className="bg-white px-6 py-4 border-b-2 border-green-700 rounded-t-lg">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
           <Activity className="w-5 h-5 text-gray-600" />
           <span>Cluster Control Panel</span>

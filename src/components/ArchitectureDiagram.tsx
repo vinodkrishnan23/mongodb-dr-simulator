@@ -7,7 +7,8 @@ import RegionCluster from './RegionCluster';
 const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({ 
   scenario, 
   nodes,
-  dynamicRegions
+  dynamicRegions,
+  onNodeClick
 }) => {
   const getRegionIcon = (regionType: string) => {
     switch (regionType) {
@@ -25,13 +26,13 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
   const getRegionClasses = (regionType: string) => {
     switch (regionType) {
       case 'primary':
-        return 'bg-blue-50 border-blue-200';
+        return 'bg-white border-green-700';
       case 'secondary':
-        return 'bg-green-50 border-green-200';
+        return 'bg-white border-green-700';
       case 'dr':
-        return 'bg-purple-50 border-purple-200';
+        return 'bg-white border-green-700';
       default:
-        return 'bg-gray-50 border-gray-200';
+        return 'bg-white border-green-700';
     }
   };
 
@@ -67,22 +68,58 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
             <RegionCluster
               region={scenario.regions[0]}
               nodes={nodes}
+              onNodeClick={onNodeClick}
             />
           </div>
           <div className="flex flex-col items-center space-y-2">
-            <ArrowRight className="w-10 h-10 text-blue-600 animate-pulse" />
-            <span className="text-sm font-bold text-blue-600">
-              Cluster-2-Cluster-Sync
-            </span>
-            <span className="text-xs text-blue-500">
-              Data Replication
-            </span>
+            {/* Check if sync is broken */}
+            {dynamicRegions?.find(region => region.id === 'dc-cluster')?.syncBroken ? (
+              <>
+                {/* Broken sync display */}
+                <div className="relative">
+                  <ArrowRight className="w-10 h-10 text-red-500" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-0.5 bg-red-500 transform rotate-45"></div>
+                    <div className="w-8 h-0.5 bg-red-500 transform -rotate-45 absolute"></div>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-red-600">
+                  Cluster-2-Cluster-Sync
+                </span>
+                <span className="text-xs text-red-500 font-medium">
+                  🚫 BROKEN
+                </span>
+              </>
+            ) : (
+              <>
+                {/* Streaming sync display */}
+                <div className="relative">
+                  <ArrowRight className="w-10 h-10 text-blue-600" />
+                  {/* Streaming dots animation */}
+                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-full overflow-hidden">
+                    <div className="flex space-x-1 animate-pulse">
+                      <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+                      <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
+                      <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+                    </div>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-blue-600">
+                  Cluster-2-Cluster-Sync
+                </span>
+                <span className="text-xs text-blue-500 flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span>📡 Streaming Data</span>
+                </span>
+              </>
+            )}
           </div>
           <div className="flex-1">
             <RegionCluster
               region={scenario.regions[1]}
               nodes={nodes}
               isTarget={true}
+              onNodeClick={onNodeClick}
             />
           </div>
         </div>
@@ -98,15 +135,37 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
               key={region.id}
               region={region}
               nodes={nodes}
+              onNodeClick={onNodeClick}
             />
           ))}
         </div>
       );
     }
+
+    if (scenario.id === ScenarioType.SINGLE_REGION_NO_DR) {
+      // Special layout for Single Region - 75% width centered
+      return (
+        <div className="flex justify-center">
+          <div className="w-full max-w-none" style={{ width: '75%' }}>
+            {allRegions.map((region: Region) => (
+              <RegionCluster
+                key={region.id}
+                region={region}
+                nodes={nodes}
+                onNodeClick={onNodeClick}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
     
     // Default layout for other scenarios
+    // Use 2-column layout for scenarios with 2 regions (Primary DC + DR Region)
+    const gridCols = allRegions.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3';
+    
     return (
-      <div className="grid gap-6 lg:grid-cols-3 md:grid-cols-2 sm:grid-cols-1">
+      <div className={`grid gap-6 ${gridCols} md:grid-cols-2 sm:grid-cols-1`}>
         {allRegions.map((region: Region) => {
           const regionNodes = getNodesForRegion(region);
           const regionStatus = getRegionStatus(regionNodes);
@@ -131,7 +190,7 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
 
               {/* Region Badge */}
               <div className="mb-4">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-gray-700 border border-gray-300">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-green-800 border border-green-700">
                   {region.type.toUpperCase()} REGION
                 </span>
               </div>
@@ -142,9 +201,7 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
                   <Node 
                     key={node.id} 
                     node={node}
-                    onClick={() => {
-                      console.log(`Clicked node: ${node.name}`);
-                    }}
+                    onClick={() => onNodeClick?.(node.id)}
                   />
                 ))}
               </div>
@@ -178,7 +235,7 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+    <div className="bg-white rounded-lg shadow-md border-2 border-green-700 p-6">
       <div className="mb-6">
         <h3 className="text-xl font-bold text-gray-900 mb-2">
           {scenario.name}

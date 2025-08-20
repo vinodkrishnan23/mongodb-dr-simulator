@@ -8,6 +8,50 @@ import {
   Region,
 } from '@/types';
 
+// Scenario 0: Single Region No DR (3 nodes in one region)
+export const singleRegionNoDRScenario: Scenario = {
+  id: ScenarioType.SINGLE_REGION_NO_DR,
+  name: '1 Region No DR',
+  description: '3-node replica set in single region: operational with quorum (2+ nodes), read-only without quorum (1 node), down when all nodes fail',
+  regions: [
+    {
+      id: 'single-region',
+      name: 'Production Region',
+      type: 'primary',
+      nodes: ['node-1', 'node-2', 'node-3'],
+    },
+  ],
+  nodes: [
+    {
+      id: 'node-1',
+      name: 'Node 1',
+      role: NodeRole.PRIMARY,
+      status: NodeStatus.UP,
+      votingRights: VotingRights.VOTER,
+      region: 'single-region',
+      datacenter: 'Region-A',
+    },
+    {
+      id: 'node-2',
+      name: 'Node 2',
+      role: NodeRole.SECONDARY,
+      status: NodeStatus.UP,
+      votingRights: VotingRights.VOTER,
+      region: 'single-region',
+      datacenter: 'Region-A',
+    },
+    {
+      id: 'node-3',
+      name: 'Node 3',
+      role: NodeRole.SECONDARY,
+      status: NodeStatus.UP,
+      votingRights: VotingRights.VOTER,
+      region: 'single-region',
+      datacenter: 'Region-A',
+    },
+  ],
+};
+
 // Scenario 1: Basic DR (3 nodes)
 export const basicDRScenario: Scenario = {
   id: ScenarioType.BASIC_DR,
@@ -399,11 +443,12 @@ export const coldStandbyScenario: Scenario = {
       region: 'dc-cluster',
       datacenter: 'Region-A',
     },
-    // No backup storage node - it's infrastructure, not a MongoDB node
+    // No backup storage nodes - they are infrastructure, not MongoDB nodes
   ],
 };
 
 export const scenarios: Record<ScenarioType, Scenario> = {
+  [ScenarioType.SINGLE_REGION_NO_DR]: singleRegionNoDRScenario,
   [ScenarioType.BASIC_DR]: basicDRScenario,
   [ScenarioType.ENHANCED_DR]: enhancedDRScenario,
   [ScenarioType.MULTI_DC]: multiDCScenario,

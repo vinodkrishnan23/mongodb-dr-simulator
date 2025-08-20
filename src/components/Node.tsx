@@ -24,9 +24,9 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
   const getRoleIcon = (role: NodeRole) => {
     switch (role) {
       case NodeRole.PRIMARY:
-        return <Crown className="w-5 h-5 text-blue-600" />;
+        return null; // No icon for Primary
       case NodeRole.SECONDARY:
-        return <Shield className="w-5 h-5 text-green-600" />;
+        return null; // No icon for Secondary
       case NodeRole.READ_ONLY:
         return <Eye className="w-5 h-5 text-gray-600" />;
       case NodeRole.STANDALONE:
@@ -100,7 +100,7 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
   };
 
   const getNodeClasses = () => {
-    let baseClasses = 'node-card cursor-pointer hover:shadow-lg transition-all duration-300';
+    let baseClasses = 'node-card cursor-pointer hover:shadow-lg transition-all duration-300 min-h-36';
     
     if (node.status === NodeStatus.DOWN) {
       baseClasses += ' node-down';
@@ -127,41 +127,59 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         }
       }}
     >
-      {/* Node Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center space-x-2">
-          <Server className="w-5 h-5 text-gray-700" />
-          <h3 className="font-semibold text-gray-900">{node.name}</h3>
+      <div className="flex items-start min-h-full">
+        {/* Left-aligned Database Icon - 40% width */}
+        <div className="w-2/5 flex-shrink-0 flex items-center justify-center py-2">
+          <img src="/Database.png" alt="MongoDB Database" className="w-full max-h-24 object-contain" />
         </div>
-        {getStatusIcon(node.status)}
-      </div>
 
-      {/* Role Information */}
-      <div className="flex items-center space-x-2 mb-2">
-        {getRoleIcon(node.role)}
-        <span className="text-sm font-medium text-gray-700">
-          {getRoleLabel(node.role)}
-        </span>
-      </div>
+        {/* Right-aligned Content - 60% width */}
+        <div className="w-3/5 flex-1 min-w-0 pl-3 py-2 flex flex-col justify-between min-h-full">
+          {/* Top Section */}
+          <div className="flex-1">
+            {/* Status Icon - Top Right */}
+            <div className="flex justify-end mb-2">
+              {getStatusIcon(node.status)}
+            </div>
 
-      {/* Status Information */}
-      <div className="flex items-center space-x-2 mb-2">
-        <span className="text-sm text-gray-600">
-          Status: {getStatusLabel(node.status)}
-        </span>
-      </div>
+            {/* Role Information */}
+            <div className="text-right mb-1">
+              {getRoleIcon(node.role) && (
+                <div className="flex items-center justify-end space-x-2 mb-1">
+                  {getRoleIcon(node.role)}
+                  <span className="text-sm font-medium text-gray-700">
+                    {getRoleLabel(node.role)}
+                  </span>
+                </div>
+              )}
+              {!getRoleIcon(node.role) && (
+                <span className="text-sm font-medium text-gray-700">
+                  {getRoleLabel(node.role)}
+                </span>
+              )}
+            </div>
 
-      {/* Voting Rights */}
-      <div className="flex items-center space-x-2 mb-2">
-        {getVotingIcon(node.votingRights)}
-        <span className="text-sm text-gray-600">
-          {getVotingLabel(node.votingRights)}
-        </span>
-      </div>
+            {/* Status Information */}
+            <div className="text-right mb-1">
+              <span className="text-sm text-gray-600">
+                Status: {getStatusLabel(node.status)}
+              </span>
+            </div>
 
-      {/* Datacenter Information */}
-      <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">
-        {node.datacenter}
+            {/* Voting Rights */}
+            <div className="flex items-center justify-end space-x-2 mb-2">
+              {getVotingIcon(node.votingRights)}
+              <span className="text-sm text-gray-600">
+                {getVotingLabel(node.votingRights)}
+              </span>
+            </div>
+          </div>
+
+          {/* Bottom Section - Datacenter */}
+          <div className="text-xs text-gray-500 text-right pt-2 border-t border-gray-200 mt-auto">
+            {node.datacenter}
+          </div>
+        </div>
       </div>
     </div>
   );
