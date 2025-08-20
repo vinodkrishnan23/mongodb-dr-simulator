@@ -1,3 +1,18 @@
+// Deployment modes
+export enum DeploymentMode {
+  ATLAS = 'atlas',
+  ENTERPRISE = 'enterprise',
+}
+
+// Filter options
+export enum DeploymentRegion {
+  ONE = '1',
+  TWO = '2',
+  THREE = '3',
+}
+
+
+
 // Node types and enums
 export enum NodeRole {
   PRIMARY = 'primary',
@@ -52,6 +67,7 @@ export interface LogEvent {
 
 // Scenario types
 export enum ScenarioType {
+  SINGLE_REGION_NO_DR = 'single_region_no_dr',
   BASIC_DR = 'basic_dr',
   ENHANCED_DR = 'enhanced_dr',
   MULTI_DC = 'multi_dc',
@@ -75,6 +91,8 @@ export interface Region {
   nodes: string[]; // Node IDs
   clusterState?: 'active' | 'standby' | 'down' | 'provisioning';
   hasSync?: boolean; // For cluster-to-cluster sync
+  syncBroken?: boolean; // Track if sync connection is broken after failover
+  visibleToApps?: boolean; // For Cold Standby restored cluster visibility
 }
 
 // Simulation state
@@ -90,6 +108,9 @@ export enum SimulationPhase {
 
 export interface SimulationState {
   currentScenario: ScenarioType;
+  deploymentMode: DeploymentMode; // Atlas vs Enterprise mode
+  deploymentRegion: DeploymentRegion; // Region count filter
+  isScenarioSelected: boolean; // Track if user has actively selected a scenario
   phase: SimulationPhase;
   nodes: MongoNode[];
   logs: LogEvent[];
@@ -132,6 +153,7 @@ export interface ClusterStatus {
   // For multi-replica set scenarios (Hot Standby, Cold Standby)
   replicaSets?: ReplicaSetStatus[];
   scenarioType?: 'single' | 'multi' | 'backup';
+  syncBroken?: boolean; // For Cold Standby sync breaking when 2+ nodes down
 }
 
 // Recovery action types
@@ -161,6 +183,7 @@ export interface ArchitectureDiagramProps {
   scenario: Scenario;
   nodes: MongoNode[];
   dynamicRegions?: Region[];
+  onNodeClick?: (nodeId: string) => void;
 }
 
 export interface ControlPanelProps {
@@ -177,4 +200,6 @@ export interface EventLogProps {
 export interface ScenarioTabsProps {
   currentScenario: ScenarioType;
   onScenarioChange: (scenario: ScenarioType) => void;
+  deploymentMode: DeploymentMode;
+  deploymentRegion: DeploymentRegion;
 }

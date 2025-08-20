@@ -16,13 +16,15 @@ interface RegionClusterProps {
   nodes: MongoNode[];
   showSyncArrow?: boolean;
   isTarget?: boolean;
+  onNodeClick?: (nodeId: string) => void;
 }
 
 const RegionCluster: React.FC<RegionClusterProps> = ({ 
   region, 
   nodes, 
   showSyncArrow = false,
-  isTarget = false 
+  isTarget = false,
+  onNodeClick
 }) => {
   const getRegionIcon = (regionType: string) => {
     switch (regionType) {
@@ -35,7 +37,7 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
       case 'cluster':
         return <Server className="w-5 h-5 text-indigo-600" />;
       case 'backup':
-        return <HardDrive className="w-5 h-5 text-orange-600" />;
+        return <HardDrive className="w-5 h-5 text-blue-600" />;
       default:
         return <Building className="w-5 h-5 text-gray-600" />;
     }
@@ -45,7 +47,14 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
     let baseClasses = 'border-2 rounded-lg p-4 transition-all duration-300';
     
     if (regionType === 'backup') {
-      return `${baseClasses} bg-orange-50 border-orange-200`;
+      // Use blue colors to match DC region styling
+      switch (clusterState) {
+        case 'down':
+          return `${baseClasses} bg-red-50 border-red-300 opacity-60`;
+        case 'active':
+        default:
+          return `${baseClasses} bg-blue-50 border-blue-200`;
+      }
     }
     
     if (regionType === 'cluster') {
@@ -158,14 +167,31 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
         {/* Region Type Badge */}
         <div className="mb-4">
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-gray-700 border border-gray-300">
-            {region.type.toUpperCase()} {region.type === 'cluster' ? 'CLUSTER' : 'REGION'}
+            {region.type === 'cluster' ? 'CLUSTER' : `${region.type.toUpperCase()} REGION`}
           </span>
           
           {/* Special indicator for Hot Standby DR cluster */}
-          {region.type === 'cluster' && region.clusterState === 'standby' && (
+          {region.type === 'cluster' && region.id === 'dr-cluster' && (
             <div className="mt-2">
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-300">
-                📱 Invisible to Apps
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${
+                region.clusterState === 'active'
+                  ? 'bg-green-100 text-green-700 border-green-300'
+                  : 'bg-orange-100 text-orange-700 border-orange-300'
+              }`}>
+                📱 {region.clusterState === 'active' ? 'Visible to Apps' : 'Invisible to Apps'}
+              </span>
+            </div>
+          )}
+          
+          {/* Special indicator for Cold Standby restored cluster visibility */}
+          {region.id === 'dr-cluster-restored' && (
+            <div className="mt-2">
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${
+                region.visibleToApps 
+                  ? 'bg-green-100 text-green-700 border-green-300' 
+                  : 'bg-orange-100 text-orange-700 border-orange-300'
+              }`}>
+                📱 {region.visibleToApps ? 'Visible to Apps' : 'Invisible to Apps'}
               </span>
             </div>
           )}
@@ -174,8 +200,8 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
         {/* Special handling for backup storage - Not MongoDB nodes but storage infrastructure */}
         {region.type === 'backup' ? (
           <div className="space-y-3">
-            <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-orange-200">
-              <HardDrive className="w-8 h-8 text-orange-600" />
+            <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-blue-200">
+              <HardDrive className="w-8 h-8 text-blue-600" />
               <div>
                 <h5 className="font-medium text-gray-900">Cloud Storage</h5>
                 <p className="text-sm text-gray-600">Automated Database Backups</p>
@@ -186,12 +212,14 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
                   • PITR logs (Point-in-Time Recovery)
                 </div>
                 <div className="flex items-center space-x-1 mt-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="text-xs text-green-600">Storage Available</span>
+                  <div className={`w-2 h-2 ${region.clusterState === 'down' ? 'bg-red-500' : 'bg-green-500'} rounded-full`}></div>
+                  <span className={`text-xs ${region.clusterState === 'down' ? 'text-red-600' : 'text-green-600'}`}>
+                    {region.clusterState === 'down' ? 'Storage Unavailable' : 'Storage Available'}
+                  </span>
                 </div>
               </div>
             </div>
-            <div className="text-xs text-orange-700 bg-orange-100 p-2 rounded-md">
+            <div className="text-xs text-blue-700 bg-blue-100 p-2 rounded-md">
               💡 This is backup storage infrastructure, not MongoDB nodes
             </div>
           </div>
@@ -202,9 +230,7 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
               <Node 
                 key={node.id} 
                 node={node}
-                onClick={() => {
-                  console.log(`Clicked node: ${node.name}`);
-                }}
+                onClick={() => onNodeClick?.(node.id)}
               />
             ))}
           </div>
@@ -212,11 +238,17 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
 
         {/* Region Summary */}
         {region.type === 'backup' ? (
-          <div className="mt-4 pt-3 border-t border-orange-200">
+          <div className="mt-4 pt-3 border-t border-blue-200">
             <div className="text-xs text-gray-500 space-y-1">
               <div className="flex justify-between">
                 <span>Storage Type:</span>
                 <span className="font-medium">Cloud Object Storage/Local Storage</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Status:</span>
+                <span className={`font-medium ${region.clusterState === 'down' ? 'text-red-600' : 'text-green-600'}`}>
+                  {region.clusterState === 'down' ? 'Unavailable' : 'Available'}
+                </span>
               </div>
             </div>
           </div>

@@ -1,18 +1,27 @@
 import React from 'react';
 import { Database, Shield, Globe, GitBranch, RefreshCw, HardDrive } from 'lucide-react';
-import { ScenarioTabsProps, ScenarioType } from '@/types';
+import { ScenarioTabsProps, ScenarioType, DeploymentMode, DeploymentRegion } from '@/types';
 
 const ScenarioTabs: React.FC<ScenarioTabsProps> = ({ 
   currentScenario, 
-  onScenarioChange 
+  onScenarioChange,
+  deploymentMode,
+  deploymentRegion 
 }) => {
   const scenarios = [
+    {
+      id: ScenarioType.SINGLE_REGION_NO_DR,
+      name: '1 Region No DR',
+      description: '3 Nodes: Single Region Replica Set',
+      icon: <Database className="w-5 h-5" />,
+      color: 'gray',
+    },
     {
       id: ScenarioType.BASIC_DR,
       name: 'Basic DR',
       description: '3 Nodes: 2 DC + 1 DR',
       icon: <Database className="w-5 h-5" />,
-      color: 'blue',
+      color: 'green',
     },
     {
       id: ScenarioType.ENHANCED_DR,
@@ -26,30 +35,71 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
       name: 'Highly Available',
       description: '5 Nodes: 2 DC1 + 2 DC2 + 1 DR',
       icon: <Globe className="w-5 h-5" />,
-      color: 'purple',
+      color: 'green',
     },
     {
       id: ScenarioType.ENHANCED_2_STEP,
       name: '2-Step Recovery',
       description: '4 Nodes: 2 DC + 2 DR (1 Read-Only)',
       icon: <GitBranch className="w-5 h-5" />,
-      color: 'yellow',
+      color: 'green',
     },
     {
       id: ScenarioType.HOT_STANDBY,
       name: 'Hot Standby',
       description: '6 Nodes: 2 Independent Clusters + Sync',
       icon: <RefreshCw className="w-5 h-5" />,
-      color: 'red',
+      color: 'green',
     },
     {
       id: ScenarioType.COLD_STANDBY,
       name: 'Cold Standby',
       description: '3 Nodes: DC Cluster + Backup',
       icon: <HardDrive className="w-5 h-5" />,
-      color: 'orange',
+      color: 'green',
     },
   ];
+
+  // Filter scenarios based on deployment mode and region combination
+  const getVisibleScenarios = () => {
+    // Single region scenarios - both Atlas and Enterprise
+    if (deploymentRegion === DeploymentRegion.ONE) {
+      return scenarios.filter(scenario => 
+        [ScenarioType.SINGLE_REGION_NO_DR].includes(scenario.id)
+      );
+    }
+    
+    if (deploymentMode === DeploymentMode.ATLAS && deploymentRegion === DeploymentRegion.TWO) {
+      return scenarios.filter(scenario => 
+        [ScenarioType.BASIC_DR, ScenarioType.ENHANCED_DR, ScenarioType.ENHANCED_2_STEP, 
+         ScenarioType.HOT_STANDBY, ScenarioType.COLD_STANDBY].includes(scenario.id)
+      );
+    }
+    
+    if (deploymentMode === DeploymentMode.ATLAS && deploymentRegion === DeploymentRegion.THREE) {
+      return scenarios.filter(scenario => 
+        [ScenarioType.MULTI_DC].includes(scenario.id)
+      );
+    }
+    
+    if (deploymentMode === DeploymentMode.ENTERPRISE && deploymentRegion === DeploymentRegion.TWO) {
+      return scenarios.filter(scenario => 
+        [ScenarioType.BASIC_DR, ScenarioType.ENHANCED_DR, 
+         ScenarioType.HOT_STANDBY, ScenarioType.COLD_STANDBY].includes(scenario.id)
+      );
+    }
+    
+    if (deploymentMode === DeploymentMode.ENTERPRISE && deploymentRegion === DeploymentRegion.THREE) {
+      return scenarios.filter(scenario => 
+        [ScenarioType.MULTI_DC].includes(scenario.id)
+      );
+    }
+    
+    // Default: show no scenarios for invalid combinations
+    return [];
+  };
+
+  const visibleScenarios = getVisibleScenarios();
 
   const getTabClasses = (scenarioId: ScenarioType, color: string) => {
     const isActive = currentScenario === scenarioId;
@@ -59,7 +109,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
         case 'blue':
           return 'bg-blue-100 border-blue-500 text-blue-700';
         case 'green':
-          return 'bg-green-100 border-green-500 text-green-700';
+          return 'bg-white border-green-800 text-green-800 ring-2 ring-green-700 ring-opacity-50';
         case 'purple':
           return 'bg-purple-100 border-purple-500 text-purple-700';
         case 'yellow':
@@ -73,7 +123,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
       }
     }
     
-    return 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-400';
+    return 'bg-white border-green-700 text-gray-700 hover:bg-white hover:text-green-800 hover:border-green-800';
   };
 
   const getIconClasses = (scenarioId: ScenarioType, color: string) => {
@@ -84,7 +134,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
         case 'blue':
           return 'text-blue-600';
         case 'green':
-          return 'text-green-600';
+          return 'text-green-800';
         case 'purple':
           return 'text-purple-600';
         case 'yellow':
@@ -98,12 +148,12 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
       }
     }
     
-    return 'text-gray-500';
+    return 'text-green-700';
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200">
-      <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 rounded-t-lg">
+    <div className="bg-white rounded-lg shadow-md border-2 border-green-700">
+      <div className="bg-white px-6 py-4 border-b-2 border-green-700 rounded-t-lg">
         <h2 className="text-xl font-bold text-gray-900">
           MongoDB Replica Set DR Simulator
         </h2>
@@ -114,7 +164,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
 
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {scenarios.map((scenario) => (
+          {visibleScenarios.map((scenario) => (
             <button
               key={scenario.id}
               onClick={() => onScenarioChange(scenario.id)}
@@ -145,19 +195,6 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
               )}
             </button>
           ))}
-        </div>
-
-        {/* Scenario Benefits */}
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="font-semibold text-blue-900 mb-2">
-            What you'll learn:
-          </h4>
-          <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-            <li>How MongoDB replica sets handle different types of failures</li>
-            <li>Manual disaster recovery procedures and their trade-offs</li>
-            <li>The importance of quorum in distributed database systems</li>
-            <li>How voting rights and node roles affect cluster resilience</li>
-          </ul>
         </div>
       </div>
     </div>

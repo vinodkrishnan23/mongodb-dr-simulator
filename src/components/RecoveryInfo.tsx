@@ -19,6 +19,11 @@ interface RecoveryApproach {
 }
 
 const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoveryStep }) => {
+  // Don't show for Single Region No DR scenario - it has no DR capabilities
+  if (scenario === ScenarioType.SINGLE_REGION_NO_DR) {
+    return null;
+  }
+
   // Only show after recovery actions have been taken
   if (phase !== SimulationPhase.RECOVERED && 
       phase !== SimulationPhase.STEP_1_COMPLETE && 
