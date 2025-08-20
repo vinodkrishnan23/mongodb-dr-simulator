@@ -6,6 +6,7 @@ interface RecoveryInfoProps {
   scenario: ScenarioType;
   phase: SimulationPhase;
   recoveryStep?: number;
+  recoveryAction?: string;
 }
 
 interface RecoveryApproach {
@@ -18,7 +19,7 @@ interface RecoveryApproach {
   complexity: 'Low' | 'Medium' | 'High';
 }
 
-const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoveryStep }) => {
+const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoveryStep, recoveryAction }) => {
   // Don't show for Single Region No DR scenario - it has no DR capabilities
   if (scenario === ScenarioType.SINGLE_REGION_NO_DR) {
     return null;
@@ -34,31 +35,71 @@ const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoverySt
   const getRecoveryApproach = (): RecoveryApproach | null => {
     switch (scenario) {
       case ScenarioType.BASIC_DR:
-        return {
-          name: 'Basic DR with Manual Recovery',
-          pros: [
-            'Simple architecture with minimal infrastructure',
-            'Lower ongoing operational costs'
-          ],
-          cons: [
-            'Manual intervention required during disasters',
-            'No automatic failover capabilities',
-            'Single point of failure during normal operations',
-            'Risk of human error during recovery procedures'
-          ],
-          rto: '15-60 minutes',
-          rpo: '0-5 minutes',
-          cost: 'Low',
-          complexity: 'Medium'
-        };
+        // Show different analysis based on which recovery action was taken
+        if (recoveryAction === 'reconfigure-standalone') {
+          return {
+            name: 'Basic DR - Reconfigure as Standalone',
+            pros: [
+              'Faster recovery option - involves conversion of a single node to a standalone node/replicaset',
+              'No additional infrastructure required',
+            ],
+            cons: [
+              'No replica set redundancy - single point of failure',
+              'No automatic failover capabilities',
+              'Data durability risk with single node',
+              'Manual intervention required to rebuild replica set later'
+            ],
+            rto: '5-15 minutes',
+            rpo: '0-2 minutes',
+            cost: 'Low',
+            complexity: 'Low'
+          };
+        } else if (recoveryAction === 'add-new-nodes') {
+          return {
+            name: 'Basic DR - Add 2 New Nodes',
+            pros: [
+              'Maintains replica set architecture and redundancy',
+              'Better data durability with multiple nodes',
+              'Scalable solution for future growth as reads will be distributed across the nodes' 
+            ],
+            cons: [
+              'Longer recovery time due to node provisioning',
+              'Higher infrastructure costs with additional nodes',
+              'Initial sync time for new nodes'
+            ],
+            rto: '30-60 minutes',
+            rpo: '0-5 minutes',
+            cost: 'Medium',
+            complexity: 'Medium'
+          };
+        } else {
+          // Fallback for when no specific action is tracked yet
+          return {
+            name: 'Basic DR with Manual Recovery',
+            pros: [
+              'Simple architecture with minimal infrastructure',
+              'Lower ongoing operational costs'
+            ],
+            cons: [
+              'Manual intervention required during disasters',
+              'No automatic failover capabilities',
+              'Single point of failure during normal operations',
+              'Risk of human error during recovery procedures'
+            ],
+            rto: '15-60 minutes',
+            rpo: '0-5 minutes',
+            cost: 'Low',
+            complexity: 'Medium'
+          };
+        }
 
       case ScenarioType.ENHANCED_DR:
         return {
           name: 'Enhanced DR with Voting Rights Management',
           pros: [
             'More nodes available for disaster scenarios',
-            'Read-only nodes provide better read scaling during normal ops',
-            'Flexible voting rights reconfiguration',
+            'Read-only nodes provide better read scaling during normal operations',
+            'Easier manual change to make - Flexible voting rights reconfiguration',
             'Better resource utilization with read-only secondaries'
           ],
           cons: [
@@ -84,30 +125,23 @@ const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoverySt
           ],
           cons: [
             'Highest infrastructure and network costs',
-            'Complexity in network latency and data consistency',
-            'Requires sophisticated monitoring and alerting',
-            'Potential for split-brain scenarios in network partitions'
           ],
           rto: '30 seconds - 5 minutes',
           rpo: '0-1 minutes',
           cost: 'High',
-          complexity: 'High'
+          complexity: 'Low'
         };
 
       case ScenarioType.ENHANCED_2_STEP:
         return {
           name: recoveryStep === 1 ? '2-Step Recovery (Step 1)' : '2-Step Recovery (Complete)',
           pros: [
-            'Gradual recovery process allows for careful validation',
-            'Flexibility to pause between steps for assessment',
-            'Lower risk of configuration errors with staged approach',
-            'Good balance between automation and control'
+            'RTO will be equal to time taken to add the new node to the cluster + initial sync time',
+            'Lesser cost in comparison to a Enhanced DR Setup'
           ],
           cons: [
-            'Longer total recovery time due to manual steps',
-            'Requires operator knowledge of multi-step procedures',
-            'Risk of incomplete recovery if steps are skipped',
-            'More complex runbook documentation required'
+            'Longer total recovery time due to more manual steps',
+            'Addition of the new node to the cluster requires initial sync before it is available'
           ],
           rto: recoveryStep === 1 ? '15-45 minutes (Partial)' : '20-60 minutes (Complete)',
           rpo: '0-3 minutes',
@@ -119,16 +153,14 @@ const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoverySt
         return {
           name: 'Hot Standby with Cluster-to-Cluster Sync',
           pros: [
-            'Very fast failover with minimal data loss',
+            'Manual but fast failover with minimal data loss',
             'Complete cluster isolation prevents cascading failures',
-            'Independent scaling of primary and standby clusters',
             'Excellent for mission-critical applications'
           ],
           cons: [
             'Highest resource costs with duplicate infrastructure',
             'Complex cluster-to-cluster synchronization',
-            'Potential for sync lag during high write volumes',
-            'Requires sophisticated change data capture mechanisms'
+            'Potential for sync lag during high write volumes'
           ],
           rto: '1-10 minutes',
           rpo: '0-30 seconds',
@@ -228,13 +260,14 @@ const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoverySt
         </div>
       </div>
 
-      {/* Metrics */}
+      {/* Key Metrics - DISABLED (can be re-enabled later) */}
+      {/*
       <div className="mt-6 pt-4 border-t border-gray-200">
         <h4 className="font-medium text-gray-900 mb-3">Key Metrics</h4>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-          {/*<div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-blue-600" />
-            /*<div>
+            <div>
               <span className="text-gray-600">RTO:</span>
               <p className="font-medium">{approach.rto}</p>
             </div>
@@ -245,7 +278,7 @@ const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoverySt
               <span className="text-gray-600">RPO:</span>
               <p className="font-medium">{approach.rpo}</p>
             </div>
-          </div>*/}
+          </div>
           <div className="flex items-center space-x-2">
             <DollarSign className="w-4 h-4 text-blue-600" />
             <div>
@@ -266,6 +299,7 @@ const RecoveryInfo: React.FC<RecoveryInfoProps> = ({ scenario, phase, recoverySt
           </div>
         </div>
       </div>
+      */}
     </div>
   );
 };

@@ -119,6 +119,7 @@ export interface SimulationState {
   recoveryStep?: number; // For multi-step recovery processes
   progressPercent?: number; // For backup/restore operations
   regions?: Region[]; // Dynamic regions state for advanced scenarios
+  recoveryAction?: string; // Track which specific recovery action was taken
 }
 
 export interface ActionButton {

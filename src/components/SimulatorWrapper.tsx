@@ -220,6 +220,7 @@ const SimulatorWrapper: React.FC = () => {
       progressPercent: undefined, // Clear any progress
       recoveryStep: undefined, // Clear any recovery steps
       regions: undefined, // Clear any dynamic regions
+      recoveryAction: undefined, // Clear recovery action tracking
     }));
   }, [updateAvailableActions]);
 
@@ -463,6 +464,7 @@ const SimulatorWrapper: React.FC = () => {
         nodes: result.updatedNodes,
         logs: newLogs,
         clusterStatus,
+        recoveryAction: actionId, // Track which recovery action was taken
         availableActions: updateAvailableActions(newPhase, prevState.currentScenario, result.updatedNodes),
       };
     });
@@ -556,6 +558,7 @@ const SimulatorWrapper: React.FC = () => {
         progressPercent: undefined, // Clear any progress
         recoveryStep: undefined, // Clear any recovery steps
         regions: undefined, // Clear any dynamic regions
+        recoveryAction: undefined, // Clear recovery action tracking
       };
     });
   }, [updateAvailableActions]);
@@ -585,7 +588,7 @@ const SimulatorWrapper: React.FC = () => {
     
     if (deploymentMode === DeploymentMode.ATLAS && deploymentRegion === DeploymentRegion.TWO) {
       return [ScenarioType.BASIC_DR, ScenarioType.ENHANCED_DR, ScenarioType.ENHANCED_2_STEP, 
-              ScenarioType.HOT_STANDBY, ScenarioType.COLD_STANDBY].includes(currentScenario);
+              /* ScenarioType.HOT_STANDBY, */ ScenarioType.COLD_STANDBY].includes(currentScenario);
     }
     
     if (deploymentMode === DeploymentMode.ATLAS && deploymentRegion === DeploymentRegion.THREE) {
@@ -594,7 +597,7 @@ const SimulatorWrapper: React.FC = () => {
     
     if (deploymentMode === DeploymentMode.ENTERPRISE && deploymentRegion === DeploymentRegion.TWO) {
       return [ScenarioType.BASIC_DR, ScenarioType.ENHANCED_DR, 
-              ScenarioType.HOT_STANDBY, ScenarioType.COLD_STANDBY].includes(currentScenario);
+              /* ScenarioType.HOT_STANDBY, */ ScenarioType.COLD_STANDBY].includes(currentScenario);
     }
     
     if (deploymentMode === DeploymentMode.ENTERPRISE && deploymentRegion === DeploymentRegion.THREE) {
@@ -680,6 +683,7 @@ const SimulatorWrapper: React.FC = () => {
               scenario={simulationState.currentScenario}
               phase={simulationState.phase}
               recoveryStep={simulationState.recoveryStep}
+              recoveryAction={simulationState.recoveryAction}
             />
 
             {/* Event Log - Full width */}

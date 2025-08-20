@@ -72,7 +72,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
     if (deploymentMode === DeploymentMode.ATLAS && deploymentRegion === DeploymentRegion.TWO) {
       return scenarios.filter(scenario => 
         [ScenarioType.BASIC_DR, ScenarioType.ENHANCED_DR, ScenarioType.ENHANCED_2_STEP, 
-         ScenarioType.HOT_STANDBY, ScenarioType.COLD_STANDBY].includes(scenario.id)
+         /* ScenarioType.HOT_STANDBY, */ ScenarioType.COLD_STANDBY].includes(scenario.id)
       );
     }
     
@@ -85,7 +85,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
     if (deploymentMode === DeploymentMode.ENTERPRISE && deploymentRegion === DeploymentRegion.TWO) {
       return scenarios.filter(scenario => 
         [ScenarioType.BASIC_DR, ScenarioType.ENHANCED_DR, 
-         ScenarioType.HOT_STANDBY, ScenarioType.COLD_STANDBY].includes(scenario.id)
+         /* ScenarioType.HOT_STANDBY, */ ScenarioType.COLD_STANDBY].includes(scenario.id)
       );
     }
     
