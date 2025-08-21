@@ -115,7 +115,8 @@ const SimulatorWrapper: React.FC = () => {
   const updateAvailableActions = useCallback((
     phase: SimulationPhase,
     scenario: ScenarioType,
-    nodes: MongoNode[]
+    nodes: MongoNode[],
+    deploymentMode?: DeploymentMode
   ): ActionButton[] => {
     const actions: ActionButton[] = [];
 
@@ -129,7 +130,7 @@ const SimulatorWrapper: React.FC = () => {
       });
     } else if (phase === SimulationPhase.FAILURE_OCCURRED) {
       // Add recovery actions
-      const recoveryActions = getRecoveryActions(scenario, nodes);
+      const recoveryActions = getRecoveryActions(scenario, nodes, deploymentMode || simulationState.deploymentMode);
       recoveryActions.forEach(action => {
         actions.push({
           id: action.id,
@@ -148,7 +149,7 @@ const SimulatorWrapper: React.FC = () => {
       });
     } else if (phase === SimulationPhase.STEP_1_COMPLETE) {
       // Add Step 2 recovery actions for Enhanced 2-Step scenario
-      const recoveryActions = getRecoveryActions(scenario, nodes);
+      const recoveryActions = getRecoveryActions(scenario, nodes, deploymentMode || simulationState.deploymentMode);
       recoveryActions.forEach(action => {
         actions.push({
           id: action.id,
@@ -193,7 +194,7 @@ const SimulatorWrapper: React.FC = () => {
     }
 
     return actions;
-  }, []);
+  }, [simulationState.deploymentMode]);
 
   // Handle scenario change
   const handleScenarioChange = useCallback((newScenario: ScenarioType) => {
@@ -215,7 +216,7 @@ const SimulatorWrapper: React.FC = () => {
           scenario.description
         ),
       ],
-      availableActions: updateAvailableActions(SimulationPhase.INITIAL, newScenario, initialNodes),
+      availableActions: updateAvailableActions(SimulationPhase.INITIAL, newScenario, initialNodes, simulationState.deploymentMode),
       clusterStatus,
       progressPercent: undefined, // Clear any progress
       recoveryStep: undefined, // Clear any recovery steps
@@ -263,7 +264,7 @@ const SimulatorWrapper: React.FC = () => {
   // Handle node click to toggle status
   const handleNodeClick = useCallback((nodeId: string) => {
     setSimulationState(prevState => {
-      const { updatedNodes, logEvents } = toggleNodeStatus(prevState.nodes, nodeId, prevState.currentScenario);
+      const { updatedNodes, logEvents } = toggleNodeStatus(prevState.nodes, nodeId, prevState.currentScenario, prevState.deploymentMode);
       
       // For Cold Standby, update backup storage regions based on DC cluster status
       let updatedRegions = prevState.regions;
@@ -296,7 +297,7 @@ const SimulatorWrapper: React.FC = () => {
       const clusterStatus = calculateClusterStatus(updatedNodes, prevState.currentScenario, updatedRegions);
       
       // Check if recovery actions are available
-      const recoveryActions = getRecoveryActions(prevState.currentScenario, updatedNodes);
+      const recoveryActions = getRecoveryActions(prevState.currentScenario, updatedNodes, prevState.deploymentMode);
       const hasRecoveryActions = recoveryActions.length > 0;
       
       // Determine the phase based on cluster status and available recovery actions
@@ -313,7 +314,7 @@ const SimulatorWrapper: React.FC = () => {
         regions: updatedRegions,
         logs: [...prevState.logs, ...logEvents],
         clusterStatus,
-        availableActions: updateAvailableActions(newPhase, prevState.currentScenario, updatedNodes),
+        availableActions: updateAvailableActions(newPhase, prevState.currentScenario, updatedNodes, prevState.deploymentMode),
       };
     });
   }, [updateAvailableActions]);
@@ -339,7 +340,7 @@ const SimulatorWrapper: React.FC = () => {
           phase: SimulationPhase.RESTORING,
           logs: [...prevState.logs, ...result.logEvents],
           progressPercent: 0,
-          availableActions: updateAvailableActions(SimulationPhase.RESTORING, prevState.currentScenario, result.updatedNodes),
+          availableActions: updateAvailableActions(SimulationPhase.RESTORING, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
         };
       });
       return;
@@ -358,7 +359,7 @@ const SimulatorWrapper: React.FC = () => {
           logs: [...prevState.logs, ...result.logEvents],
           clusterStatus,
           recoveryStep: 1,
-          availableActions: updateAvailableActions(SimulationPhase.STEP_1_COMPLETE, prevState.currentScenario, result.updatedNodes),
+          availableActions: updateAvailableActions(SimulationPhase.STEP_1_COMPLETE, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
         };
       });
       return;
@@ -376,7 +377,7 @@ const SimulatorWrapper: React.FC = () => {
           logs: [...prevState.logs, ...result.logEvents],
           clusterStatus,
           recoveryStep: 2,
-          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes),
+          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
         };
       });
       return;
@@ -396,7 +397,7 @@ const SimulatorWrapper: React.FC = () => {
           logs: [...prevState.logs, ...result.logEvents],
           clusterStatus,
           regions: result.updatedRegions, // Update regions with DR cluster marked as active
-          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes),
+          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
         };
       });
       return;
@@ -438,7 +439,7 @@ const SimulatorWrapper: React.FC = () => {
           regions: reorderedRegions,
           logs: [...prevState.logs, ...result.logEvents],
           clusterStatus,
-          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes),
+          availableActions: updateAvailableActions(SimulationPhase.RECOVERED, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
         };
       });
       return;
@@ -465,7 +466,7 @@ const SimulatorWrapper: React.FC = () => {
         logs: newLogs,
         clusterStatus,
         recoveryAction: actionId, // Track which recovery action was taken
-        availableActions: updateAvailableActions(newPhase, prevState.currentScenario, result.updatedNodes),
+        availableActions: updateAvailableActions(newPhase, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
       };
     });
   }, [updateAvailableActions]);
@@ -519,7 +520,7 @@ const SimulatorWrapper: React.FC = () => {
             clusterStatus,
             progressPercent: 100,
             regions: updatedRegions,
-            availableActions: updateAvailableActions(SimulationPhase.FAILURE_OCCURRED, prevState.currentScenario, result.updatedNodes),
+            availableActions: updateAvailableActions(SimulationPhase.FAILURE_OCCURRED, prevState.currentScenario, result.updatedNodes, prevState.deploymentMode),
           };
         }
         
@@ -553,7 +554,7 @@ const SimulatorWrapper: React.FC = () => {
             scenario.description
           ),
         ],
-        availableActions: updateAvailableActions(SimulationPhase.INITIAL, prevState.currentScenario, initialNodes),
+        availableActions: updateAvailableActions(SimulationPhase.INITIAL, prevState.currentScenario, initialNodes, prevState.deploymentMode),
         clusterStatus,
         progressPercent: undefined, // Clear any progress
         recoveryStep: undefined, // Clear any recovery steps
@@ -570,7 +571,8 @@ const SimulatorWrapper: React.FC = () => {
       availableActions: updateAvailableActions(
         prevState.phase,
         prevState.currentScenario,
-        prevState.nodes
+        prevState.nodes,
+        prevState.deploymentMode
       ),
     }));
   }, [updateAvailableActions]);

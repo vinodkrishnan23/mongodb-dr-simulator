@@ -8,7 +8,7 @@ import {
   Globe,
   Server
 } from 'lucide-react';
-import { MongoNode, Region, NodeRole } from '@/types';
+import { MongoNode, Region, NodeRole, VotingRights } from '@/types';
 import Node from './Node';
 
 interface RegionClusterProps {
@@ -262,7 +262,7 @@ const RegionCluster: React.FC<RegionClusterProps> = ({
               <div className="flex justify-between">
                 <span>Voting Nodes:</span>
                 <span className="font-medium">
-                  {regionNodes.filter(node => node.votingRights === 'voter').length}
+                  {regionNodes.filter(node => node.votingRights === VotingRights.VOTING).length}
                 </span>
               </div>
               <div className="flex justify-between">

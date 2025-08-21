@@ -28,11 +28,14 @@ export enum NodeStatus {
   RECOVERING = 'recovering',
   PROVISIONING = 'provisioning',
   RESTORING = 'restoring',
+  PROCESSING = 'processing',
+  SYNCING = 'syncing',
+  VOTING = 'voting',
 }
 
 export enum VotingRights {
-  VOTER = 'voter',
-  NON_VOTER = 'non_voter',
+  VOTING = 'voting',
+  NON_VOTING = 'non_voting',
 }
 
 export interface MongoNode {
