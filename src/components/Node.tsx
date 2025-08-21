@@ -67,6 +67,12 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
       case NodeStatus.RESTORING:
         return <Database className="w-4 h-4 text-purple-500 animate-pulse" />;
+      case NodeStatus.PROCESSING:
+        return <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />;
+      case NodeStatus.SYNCING:
+        return <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />;
+      case NodeStatus.VOTING:
+        return <div className="w-3 h-3 bg-purple-500 rounded-full animate-pulse" />;
       default:
         return <div className="w-3 h-3 bg-gray-400 rounded-full" />;
     }
@@ -84,19 +90,25 @@ const Node: React.FC<NodeProps> = ({ node, onClick }) => {
         return 'Provisioning';
       case NodeStatus.RESTORING:
         return 'Restoring';
+      case NodeStatus.PROCESSING:
+        return 'Processing';
+      case NodeStatus.SYNCING:
+        return 'Syncing';
+      case NodeStatus.VOTING:
+        return 'Voting';
       default:
         return 'Unknown';
     }
   };
 
   const getVotingIcon = (votingRights: VotingRights) => {
-    return votingRights === VotingRights.VOTER 
+    return votingRights === VotingRights.VOTING 
       ? <Vote className="w-4 h-4 text-blue-600" />
       : <MinusCircle className="w-4 h-4 text-gray-400" />;
   };
 
   const getVotingLabel = (votingRights: VotingRights) => {
-    return votingRights === VotingRights.VOTER ? 'Voting' : 'Non-Voting';
+    return votingRights === VotingRights.VOTING ? 'Voting' : 'Non-Voting';
   };
 
   const getNodeClasses = () => {

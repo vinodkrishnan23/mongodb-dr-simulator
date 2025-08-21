@@ -1,6 +1,6 @@
 import React from 'react';
 import { MapPin, Building, Globe, ArrowRight } from 'lucide-react';
-import { ArchitectureDiagramProps, MongoNode, Region, ScenarioType } from '@/types';
+import { ArchitectureDiagramProps, MongoNode, Region, ScenarioType, VotingRights } from '@/types';
 import Node from './Node';
 import RegionCluster from './RegionCluster';
 
@@ -216,7 +216,7 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
                   <div className="flex justify-between">
                     <span>Voting Nodes:</span>
                     <span className="font-medium">
-                      {regionNodes.filter(node => node.votingRights === 'voter').length}
+                      {regionNodes.filter(node => node.votingRights === VotingRights.VOTING).length}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -265,7 +265,7 @@ const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({
           </div>
           <div className="text-center">
             <div className="font-semibold text-lg text-blue-600">
-              {nodes.filter(node => node.votingRights === 'voter').length}
+              {nodes.filter(node => node.votingRights === VotingRights.VOTING).length}
             </div>
             <div className="text-gray-600">Voting</div>
           </div>

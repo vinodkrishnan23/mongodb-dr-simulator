@@ -170,7 +170,7 @@ const ScenarioTabs: React.FC<ScenarioTabsProps> = ({
               onClick={() => onScenarioChange(scenario.id)}
               className={`
                 p-4 rounded-lg border-2 transition-all duration-200 text-left
-                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500
+                focus:outline-none focus:ring-1 focus:ring-green-500 focus:ring-opacity-30
                 ${getTabClasses(scenario.id, scenario.color)}
               `}
             >
