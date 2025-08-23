@@ -16,30 +16,30 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   clusterStatus,
   nodes 
 }) => {
-  const getStatusIcon = (isOperational: boolean, hasQuorum: boolean) => {
+  const getStatusIcon = (isOperational: boolean, votingNodes: number) => {
     if (isOperational) {
       return <CheckCircle className="w-5 h-5 text-green-500" />;
-    } else if (hasQuorum) {
+    } else if (votingNodes > 0) {
       return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
     } else {
       return <XCircle className="w-5 h-5 text-red-500" />;
     }
   };
 
-  const getStatusLabel = (isOperational: boolean, hasQuorum: boolean) => {
+  const getStatusLabel = (isOperational: boolean, votingNodes: number) => {
     if (isOperational) {
       return 'Operational';
-    } else if (hasQuorum) {
+    } else if (votingNodes > 0) {
       return 'Degraded';
     } else {
       return 'Down';
     }
   };
 
-  const getStatusClasses = (isOperational: boolean, hasQuorum: boolean) => {
+  const getStatusClasses = (isOperational: boolean, votingNodes: number) => {
     if (isOperational) {
       return 'bg-white border-green-700 text-green-800';
-    } else if (hasQuorum) {
+    } else if (votingNodes > 0) {
       return 'bg-white border-green-700 text-yellow-800';
     } else {
       return 'bg-white border-green-700 text-red-800';
@@ -75,17 +75,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
       {/* Cluster Status */}
       <div className="p-6">
-        <div className={`p-4 rounded-lg border-2 mb-6 ${getStatusClasses(clusterStatus.isOperational, clusterStatus.hasQuorum)}`}>
+        <div className={`p-4 rounded-lg border-2 mb-6 ${getStatusClasses(clusterStatus.isOperational, clusterStatus.votingNodes)}`}>
           <div className="flex items-center space-x-3 mb-3">
-            {getStatusIcon(clusterStatus.isOperational, clusterStatus.hasQuorum)}
+            {getStatusIcon(clusterStatus.isOperational, clusterStatus.votingNodes)}
             <h4 className="font-semibold text-lg">
-              Cluster Status: {getStatusLabel(clusterStatus.isOperational, clusterStatus.hasQuorum)}
+              Cluster Status: {getStatusLabel(clusterStatus.isOperational, clusterStatus.votingNodes)}
             </h4>
           </div>
           
           {/* Check if we have a standalone configuration */}
           {nodes.some(node => node.role === NodeRole.STANDALONE) ? (
-            // Standalone node display - no quorum concepts
+            // Standalone node display - no majority concepts
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="flex items-center space-x-2">
                 <Server className="w-4 h-4" />
@@ -105,11 +105,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             </div>
           ) : (
-            // Replica set display - show quorum information
+            // Replica set display - show majority information
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="flex items-center space-x-2">
                 <Users className="w-4 h-4" />
-                <span>Quorum: {clusterStatus.hasQuorum ? 'Yes' : 'No'}</span>
+                <span>Majority: {clusterStatus.hasMajority ? 'Yes' : 'No'}</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Server className="w-4 h-4" />
@@ -129,9 +129,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           {!clusterStatus.isOperational && (
             <div className="mt-3 pt-3 border-t border-current border-opacity-20">
               <p className="text-sm font-medium">
-                {!clusterStatus.hasQuorum 
-                  ? '⚠️ Cluster has lost quorum and is read-only'
-                  : '⚠️ Cluster is degraded but operational'
+                {clusterStatus.votingNodes === 0
+                  ? '❌ Cluster is down - no voting nodes available'
+                  : !clusterStatus.canWrite 
+                    ? '⚠️ Cluster has lost majority and is read-only'
+                    : '⚠️ Cluster is degraded but operational'
                 }
               </p>
             </div>
@@ -143,8 +145,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 {/* Check if we have a standalone configuration */}
                 {nodes.some(node => node.role === NodeRole.STANDALONE)
                   ? '✅ Standalone node operational - reads and writes enabled (no replication)'
-                  : clusterStatus.hasQuorum && clusterStatus.votingNodes > 0
-                  ? '✅ Replica set operational with healthy quorum'
+                  : clusterStatus.hasMajority && clusterStatus.votingNodes > 0
+                  ? '✅ Replica set operational with healthy majority'
                   : '✅ System operational'
                 }
               </p>
@@ -266,7 +268,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     <span className="font-medium">{clusterStatus.votingNodes}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Quorum Required:</span>
+                    <span>Majority Required:</span>
                     <span className="font-medium">
                       {Math.floor(clusterStatus.totalVotingNodes / 2) + 1}
                     </span>

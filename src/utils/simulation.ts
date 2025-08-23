@@ -41,26 +41,26 @@ const calculateReplicaSetStatus = (
   const totalVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING).length;
   const downVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING && node.status === NodeStatus.DOWN).length;
   
-  const hasQuorum = votingNodes.length > totalVotingNodes / 2;
+  const hasMajority = votingNodes.length > totalVotingNodes / 2;
   const hasAnyVotingNodesOnline = votingNodes.length > 0;
   const primaryNode = upNodes.find(node => node.role === NodeRole.PRIMARY);
   const standaloneNode = upNodes.find(node => node.role === NodeRole.STANDALONE);
   
-  // Special case: Standalone nodes can accept writes without quorum
+  // Special case: Standalone nodes can accept writes without majority
   const isStandaloneOperational = !!standaloneNode;
-  // Replica set is operational if it has quorum (can elect primary) OR if it's standalone
-  const isReplicaSetOperational = hasQuorum;
-  // Cluster is operational only if it can function normally AND no voting nodes are down
+  // Replica set is operational if it has majority (can elect primary) OR if it's standalone
+  const isReplicaSetOperational = hasMajority;
+  // Cluster is operational if it can function normally AND no voting nodes are down
   const isOperational = (isStandaloneOperational || isReplicaSetOperational) && downVotingNodes === 0;
   
-  // Write capability requires either standalone or a primary with quorum
-  const canWrite = isStandaloneOperational || (hasQuorum && !!primaryNode);
+  // Write capability requires either standalone or a primary with majority
+  const canWrite = isStandaloneOperational || (hasMajority && !!primaryNode);
 
   return {
     name,
     region,
     isOperational,
-    hasQuorum: isStandaloneOperational ? true : hasAnyVotingNodesOnline, // Use hasAnyVotingNodesOnline for UI status
+    hasMajority: isStandaloneOperational ? true : hasMajority, // Use actual majority calculation
     canWrite,
     votingNodes: votingNodes.length,
     totalVotingNodes,
@@ -81,20 +81,27 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
     const dcNodes = nodes.filter(node => node.region === 'dc-cluster');
     const drNodes = nodes.filter(node => node.region === 'dr-cluster');
     
-    // Calculate DC cluster status - degraded when any node is down, down only when all voting nodes are down
+    // Calculate overall majority across ALL voting nodes (DC + DR combined)
+    const allUpVotingNodes = nodes.filter(
+      node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTING
+    );
+    const allTotalVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING).length;
+    const allDownVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING && node.status === NodeStatus.DOWN).length;
+    const overallHasMajority = allUpVotingNodes.length > allTotalVotingNodes / 2;
+    
+    // Calculate DC cluster status - use overall majority for cluster state
     const dcUpVotingNodes = dcNodes.filter(
       node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTING
     );
     const dcTotalVotingNodes = dcNodes.filter(node => node.votingRights === VotingRights.VOTING).length;
     const dcDownVotingNodes = dcNodes.filter(node => node.votingRights === VotingRights.VOTING && node.status === NodeStatus.DOWN).length;
-    const dcHasQuorum = dcUpVotingNodes.length > dcTotalVotingNodes / 2;
     const dcHasAnyVotingNodesOnline = dcUpVotingNodes.length > 0;
     
     const dcStatus = calculateReplicaSetStatus(
       'DC Cluster',
       'dc-cluster', 
       dcNodes,
-      dcHasQuorum ? 'active' : 'down'
+      overallHasMajority ? 'active' : 'down'
     );
     
     // DR cluster state: check dynamic regions first, fallback to 'standby'
@@ -109,16 +116,17 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
       drClusterState
     );
     
-    // Overall status: operational if at least one replica set is operational
-    const isOperational = dcStatus.isOperational || drStatus.isOperational;
-    const canWrite = dcStatus.canWrite || drStatus.canWrite;
+    // Overall status: operational if we have majority AND no voting nodes are down
+    // Degraded if we have majority BUT some voting nodes are down
+    const isOperational = overallHasMajority && allDownVotingNodes === 0;
+    const canWrite = overallHasMajority && !!(dcStatus.primaryNode || drStatus.primaryNode);
     
     return {
       isOperational,
-      hasQuorum: isOperational,
+      hasMajority: overallHasMajority,
       canWrite,
-      votingNodes: dcStatus.votingNodes + drStatus.votingNodes,
-      totalVotingNodes: dcStatus.totalVotingNodes + drStatus.totalVotingNodes,
+      votingNodes: allUpVotingNodes.length,
+      totalVotingNodes: allTotalVotingNodes,
       totalNodes: dcStatus.totalNodes + drStatus.totalNodes,
       primaryNode: dcStatus.primaryNode || drStatus.primaryNode,
       replicaSets: [dcStatus, drStatus],
@@ -127,7 +135,8 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
   }
   
   if (isColdStandby) {
-    // Cold Standby: One replica set + backup storage + potentially restored cluster
+    // Cold Standby: DC replica set + backup storage + potentially restored replica set
+    // These should be treated as independent replica sets when restored cluster exists
     const dcNodes = nodes.filter(node => node.region === 'dc-cluster');
     const restoredNodes = nodes.filter(node => node.region === 'dr-cluster-restored');
     
@@ -154,21 +163,48 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
       ));
     }
     
-    // Overall status based on any operational replica set
-    const operationalReplicaSet = replicaSets.find(rs => rs.isOperational);
-    const isOperational = !!operationalReplicaSet;
+    // Calculate combined voting node counts for UI display
+    const allUpVotingNodes = nodes.filter(
+      node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTING
+    );
     
-    return {
-      isOperational,
-      hasQuorum: isOperational,
-      canWrite: isOperational,
-      votingNodes: replicaSets.reduce((sum, rs) => sum + rs.votingNodes, 0),
-      totalVotingNodes: replicaSets.reduce((sum, rs) => sum + rs.totalVotingNodes, 0),
-      totalNodes: replicaSets.reduce((sum, rs) => sum + rs.totalNodes, 0),
-      primaryNode: operationalReplicaSet?.primaryNode,
-      replicaSets,
-      scenarioType: 'backup',
-    };
+    if (restoredNodes.length > 0) {
+      // Independent replica sets mode: DC + Restored clusters (similar to Hot Standby)
+      const operationalReplicaSet = replicaSets.find(rs => rs.isOperational);
+      const writableReplicaSet = replicaSets.find(rs => rs.canWrite); // Can write with majority even if degraded
+      const hasOperationalReplicaSet = !!operationalReplicaSet;
+      const hasWritableReplicaSet = !!writableReplicaSet;
+      
+      // Overall status: operational if ANY replica set is fully operational (no down nodes)
+      const isOperational = hasOperationalReplicaSet;
+      
+      return {
+        isOperational,
+        hasMajority: allUpVotingNodes.length > 0, // Show "majority" if any voting nodes active
+        canWrite: hasWritableReplicaSet, // Can write if any replica set has majority
+        votingNodes: allUpVotingNodes.length,
+        totalVotingNodes: replicaSets.reduce((sum, rs) => sum + rs.totalVotingNodes, 0),
+        totalNodes: replicaSets.reduce((sum, rs) => sum + rs.totalNodes, 0),
+        primaryNode: (operationalReplicaSet || writableReplicaSet)?.primaryNode,
+        replicaSets,
+        scenarioType: 'backup',
+      };
+    } else {
+      // Single replica set mode: only DC cluster exists
+      const dcReplicaSet = replicaSets[0];
+      
+      return {
+        isOperational: dcReplicaSet?.isOperational || false,
+        hasMajority: dcReplicaSet?.hasMajority || false,
+        canWrite: dcReplicaSet?.canWrite || false,
+        votingNodes: allUpVotingNodes.length,
+        totalVotingNodes: dcReplicaSet?.totalVotingNodes || 0,
+        totalNodes: dcReplicaSet?.totalNodes || 0,
+        primaryNode: dcReplicaSet?.primaryNode,
+        replicaSets,
+        scenarioType: 'backup',
+      };
+    }
   }
   
   // Single replica set scenarios (Basic DR, Enhanced DR, Multi-DC, Enhanced 2-Step)
@@ -177,19 +213,19 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
   const totalVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING).length;
   const downVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING && node.status === NodeStatus.DOWN).length;
   
-  const hasQuorum = votingNodes.length > totalVotingNodes / 2;
+  const hasMajority = votingNodes.length > totalVotingNodes / 2;
   const hasAnyVotingNodesOnline = votingNodes.length > 0; // For UI status: false only when ALL voting nodes are down
   const primaryNode = upNodes.find(node => node.role === NodeRole.PRIMARY);
   const standaloneNode = upNodes.find(node => node.role === NodeRole.STANDALONE);
   
-  // Special case: Standalone nodes can accept writes without quorum
+  // Special case: Standalone nodes can accept writes without majority
   const isStandaloneOperational = !!standaloneNode;
-  const isReplicaSetOperational = hasQuorum && !!primaryNode;
+  const isReplicaSetOperational = hasMajority && !!primaryNode;
   
   // Enhanced 2-Step special case: After Step 1, cluster is operational but read-only
   const isEnhanced2StepPartialRecovery = scenarioType === ScenarioType.ENHANCED_2_STEP && 
     upNodes.length > 0 && 
-    !hasQuorum &&
+    !hasMajority &&
     // Check if we have a read-only node that was promoted (Step 1 completed)
     nodes.some(node => 
       node.name.includes('Read-Only') && 
@@ -197,16 +233,16 @@ export const calculateClusterStatus = (nodes: MongoNode[], scenarioType?: Scenar
       node.status === NodeStatus.UP
     );
   
-  // Cluster is operational only if it can function normally AND no voting nodes are down
-  // This ensures degraded state shows when any node is down but cluster still functions
+  // Cluster is operational if it can function normally AND no voting nodes are down
+  // Degraded state shows when cluster has majority but some voting nodes are down
   const isOperational = (isStandaloneOperational || isReplicaSetOperational || isEnhanced2StepPartialRecovery) && downVotingNodes === 0;
   
   // Determine write capability
-  const canWrite = isStandaloneOperational || isReplicaSetOperational; // Only true for quorum or standalone
+  const canWrite = isStandaloneOperational || isReplicaSetOperational; // Only true for majority or standalone
   
   return {
     isOperational,
-    hasQuorum: isStandaloneOperational ? true : hasAnyVotingNodesOnline, // Use hasAnyVotingNodesOnline for UI status
+    hasMajority: isStandaloneOperational ? true : hasMajority, // Use actual majority calculation
     canWrite,
     votingNodes: votingNodes.length,
     totalVotingNodes,
@@ -268,14 +304,14 @@ export const electNewPrimary = (nodes: MongoNode[], scenarioType?: ScenarioType,
   );
   
   const totalVotingNodes = nodes.filter(node => node.votingRights === VotingRights.VOTING).length;
-  const hasQuorum = upVotingNodes.length > totalVotingNodes / 2;
+  const hasMajority = upVotingNodes.length > totalVotingNodes / 2;
   
   // Check current primary status
   const currentPrimary = nodes.find(node => node.role === NodeRole.PRIMARY);
   const hasPrimary = upVotingNodes.some(node => node.role === NodeRole.PRIMARY);
   
-  // If we have a primary but no quorum, primary should step down
-  if (currentPrimary && !hasQuorum) {
+  // If we have a primary but no majority, primary should step down
+  if (currentPrimary && !hasMajority) {
     const updatedNodes = nodes.map(node => 
       node.role === NodeRole.PRIMARY
         ? { ...node, role: NodeRole.SECONDARY }
@@ -285,7 +321,7 @@ export const electNewPrimary = (nodes: MongoNode[], scenarioType?: ScenarioType,
     const logEvents = [
       createLogEvent(
         EventType.ELECTION,
-        `Primary ${currentPrimary.name} stepped down due to loss of quorum`,
+        `Primary ${currentPrimary.name} stepped down due to loss of majority`,
         `Only ${upVotingNodes.length} of ${totalVotingNodes} voting members online (need majority)`
       ),
       createLogEvent(
@@ -298,14 +334,14 @@ export const electNewPrimary = (nodes: MongoNode[], scenarioType?: ScenarioType,
     return { updatedNodes, logEvents };
   }
   
-  // If no primary exists and we have quorum, elect a new one
+  // If no primary exists and we have majority, elect a new one
   // OR for Atlas Multi-DC, re-elect if a higher priority node is available
   const shouldReelect = scenarioType === ScenarioType.MULTI_DC && 
                        deploymentMode === DeploymentMode.ATLAS && 
-                       hasQuorum && 
+                       hasMajority && 
                        hasPrimary;
                        
-  if ((!hasPrimary && hasQuorum) || shouldReelect) {
+  if ((!hasPrimary && hasMajority) || shouldReelect) {
     let newPrimary: MongoNode;
     
     // Special logic for Multi-Datacenter scenario in Atlas mode
@@ -382,13 +418,13 @@ export const electNewPrimary = (nodes: MongoNode[], scenarioType?: ScenarioType,
     let electionMessage = isReelection 
       ? `Atlas re-election: ${newPrimary.name} elected as new Primary (replaced ${currentPrimary.name})`
       : `Primary election completed: ${newPrimary.name} elected as new Primary`;
-    let electionDetails = `Quorum available with ${upVotingNodes.length} of ${totalVotingNodes} voting members online`;
+    let electionDetails = `Majority available with ${upVotingNodes.length} of ${totalVotingNodes} voting members online`;
     
     if (scenarioType === ScenarioType.MULTI_DC && deploymentMode === DeploymentMode.ATLAS) {
       const regionName = newPrimary.region === 'primary-dc1' ? 'Primary DC1 (Region-A)' :
                         newPrimary.region === 'secondary-dc2' ? 'Secondary DC2 (Region-C)' :
                         'DR Region (Region-B)';
-      electionDetails = `Atlas prioritized ${regionName}. Quorum: ${upVotingNodes.length} of ${totalVotingNodes} voting members online`;
+      electionDetails = `Atlas prioritized ${regionName}. Majority: ${upVotingNodes.length} of ${totalVotingNodes} voting members online`;
     }
 
     const logEvents = [
@@ -410,11 +446,11 @@ export const electNewPrimary = (nodes: MongoNode[], scenarioType?: ScenarioType,
   // No election possible - return original nodes with appropriate log events
   const logEvents: LogEvent[] = [];
   
-  if (!hasPrimary && !hasQuorum) {
+  if (!hasPrimary && !hasMajority) {
     logEvents.push(
       createLogEvent(
         EventType.WARNING,
-        `No quorum available for primary election`,
+        `No majority available for primary election`,
         `Only ${upVotingNodes.length} of ${totalVotingNodes} voting members online (need majority)`
       ),
       createLogEvent(
@@ -540,7 +576,7 @@ export const addNewNodesToDR = (nodes: MongoNode[]): {
     createLogEvent(
       EventType.RECOVERY_ACTION,
       'Provisioning 2 new nodes in DR region',
-      'Adding new voting members to re-establish quorum'
+      'Adding new voting members to re-establish majority'
     ),
     createLogEvent(
       EventType.STATUS_CHANGE,
@@ -548,8 +584,8 @@ export const addNewNodesToDR = (nodes: MongoNode[]): {
       'Failed DC nodes still count toward total voting member configuration'
     ),
     createLogEvent(
-      EventType.QUORUM,
-      `Quorum re-established: ${onlineVotingNodes} of ${totalVotingNodes} voting members online (majority achieved)`
+      EventType.MAJORITY,
+      `Majority re-established: ${onlineVotingNodes} of ${totalVotingNodes} voting members online (majority achieved)`
     ),
     createLogEvent(
       EventType.ELECTION,
@@ -613,8 +649,8 @@ export const grantVotingRights = (nodes: MongoNode[]): {
       'Failed nodes still count toward total voting member configuration'
     ),
     createLogEvent(
-      EventType.QUORUM,
-      `Quorum re-established: ${onlineVotingNodes} of ${totalVotingNodes} voting members online (majority achieved)`
+      EventType.MAJORITY,
+      `Majority re-established: ${onlineVotingNodes} of ${totalVotingNodes} voting members online (majority achieved)`
     ),
     createLogEvent(
       EventType.ELECTION,
@@ -658,7 +694,7 @@ export const grantVotingRightsStep1 = (nodes: MongoNode[]): {
   const onlineVotingNodes = updatedNodes.filter(
     node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTING
   ).length;
-  const requiredForQuorum = Math.floor(totalVotingNodes / 2) + 1;
+  const requiredForMajority = Math.floor(totalVotingNodes / 2) + 1;
 
   const logEvents = [
     createLogEvent(
@@ -674,12 +710,12 @@ export const grantVotingRightsStep1 = (nodes: MongoNode[]): {
     createLogEvent(
       EventType.STATUS_CHANGE,
       'Cluster status improved: Operational but read-only',
-      `${onlineVotingNodes} of ${totalVotingNodes} voting members online (need ${requiredForQuorum} for writes)`
+      `${onlineVotingNodes} of ${totalVotingNodes} voting members online (need ${requiredForMajority} for writes)`
     ),
     createLogEvent(
       EventType.WARNING,
       'Step 2 required to restore write capability',
-      'Additional node needed to achieve quorum and enable writes'
+      'Additional node needed to achieve majority and enable writes'
     ),
   ];
 
@@ -743,7 +779,7 @@ export const addNewNodeStep2 = (nodes: MongoNode[]): {
     createLogEvent(
       EventType.RECOVERY_ACTION,
       'Step 2: Added new electable node to DR region',
-      'New voting member provisioned to establish quorum'
+      'New voting member provisioned to establish majority'
     ),
     createLogEvent(
       EventType.STATUS_CHANGE,
@@ -751,8 +787,8 @@ export const addNewNodeStep2 = (nodes: MongoNode[]): {
       'Failed DC nodes still count toward total voting member configuration'
     ),
     createLogEvent(
-      EventType.QUORUM,
-      `Quorum re-established: ${onlineVotingNodes} of ${totalVotingNodes} voting members online (majority achieved)`
+      EventType.MAJORITY,
+      `Majority re-established: ${onlineVotingNodes} of ${totalVotingNodes} voting members online (majority achieved)`
     ),
     createLogEvent(
       EventType.ELECTION,
@@ -1002,14 +1038,14 @@ export const electNewPrimaryInRegion = (nodes: MongoNode[], regionId: string): {
   );
   
   const totalVotingNodes = regionNodes.filter(node => node.votingRights === VotingRights.VOTING).length;
-  const hasQuorum = upVotingNodes.length > totalVotingNodes / 2;
+  const hasMajority = upVotingNodes.length > totalVotingNodes / 2;
   
   // Check current primary status in this region
   const currentPrimary = regionNodes.find(node => node.role === NodeRole.PRIMARY);
   const hasPrimary = upVotingNodes.some(node => node.role === NodeRole.PRIMARY);
   
-  // If we have a primary but no quorum, primary should step down
-  if (currentPrimary && !hasQuorum) {
+  // If we have a primary but no majority, primary should step down
+  if (currentPrimary && !hasMajority) {
     const updatedRegionNodes = regionNodes.map(node => 
       node.role === NodeRole.PRIMARY
         ? { ...node, role: NodeRole.SECONDARY }
@@ -1019,7 +1055,7 @@ export const electNewPrimaryInRegion = (nodes: MongoNode[], regionId: string): {
     const logEvents = [
       createLogEvent(
         EventType.ELECTION,
-        `Primary ${currentPrimary.name} stepped down in ${regionId} due to loss of quorum`,
+        `Primary ${currentPrimary.name} stepped down in ${regionId} due to loss of majority`,
         `Only ${upVotingNodes.length} of ${totalVotingNodes} voting members online (need majority)`
       ),
       createLogEvent(
@@ -1032,8 +1068,8 @@ export const electNewPrimaryInRegion = (nodes: MongoNode[], regionId: string): {
     return { updatedNodes: [...updatedRegionNodes, ...otherNodes], logEvents };
   }
   
-  // If no primary exists in this region and we have quorum, elect a new one
-  if (!hasPrimary && hasQuorum) {
+  // If no primary exists in this region and we have majority, elect a new one
+  if (!hasPrimary && hasMajority) {
     // Find the best candidate for primary (prefer secondaries over other roles)
     const secondaryNodes = upVotingNodes.filter(node => node.role === NodeRole.SECONDARY);
     const newPrimary = secondaryNodes.length > 0 ? secondaryNodes[0] : upVotingNodes[0];
@@ -1050,7 +1086,7 @@ export const electNewPrimaryInRegion = (nodes: MongoNode[], regionId: string): {
       createLogEvent(
         EventType.ELECTION,
         `Primary election completed in ${regionId}: ${newPrimary.name} elected as new Primary`,
-        `Quorum available with ${upVotingNodes.length} of ${totalVotingNodes} voting members online`
+        `Majority available with ${upVotingNodes.length} of ${totalVotingNodes} voting members online`
       ),
       createLogEvent(
         EventType.STATUS_CHANGE,
@@ -1065,11 +1101,11 @@ export const electNewPrimaryInRegion = (nodes: MongoNode[], regionId: string): {
   // No election possible - return original nodes with appropriate log events
   const logEvents: LogEvent[] = [];
   
-  if (!hasPrimary && !hasQuorum) {
+  if (!hasPrimary && !hasMajority) {
     logEvents.push(
       createLogEvent(
         EventType.WARNING,
-        `No quorum available for primary election in ${regionId}`,
+        `No majority available for primary election in ${regionId}`,
         `Only ${upVotingNodes.length} of ${totalVotingNodes} voting members online (need majority)`
       ),
       createLogEvent(
@@ -1114,14 +1150,14 @@ export const toggleNodeStatus = (nodes: MongoNode[], nodeId: string, scenarioTyp
     node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTING
   );
   const totalVotingNodes = updatedNodes.filter(node => node.votingRights === VotingRights.VOTING).length;
-  const hasQuorum = upVotingNodes.length > totalVotingNodes / 2;
+  const hasMajority = upVotingNodes.length > totalVotingNodes / 2;
   const hasPrimary = upVotingNodes.some(node => node.role === NodeRole.PRIMARY);
 
   console.log('toggleNodeStatus:', {
     nodeId,
     scenarioType,
     deploymentMode,
-    hasQuorum,
+    hasMajority,
     hasPrimary,
     upVotingNodes: upVotingNodes.length,
     totalVotingNodes,
@@ -1145,8 +1181,8 @@ export const toggleNodeStatus = (nodes: MongoNode[], nodeId: string, scenarioTyp
       finalNodes = nodesAfterElection;
       logEvents.push(...electionEvents);
     }
-  } else if (!hasQuorum && hasPrimary) {
-    // Quorum lost while primary is still up - primary should step down
+  } else if (!hasMajority && hasPrimary) {
+    // Majority lost while primary is still up - primary should step down
     if (scenarioType === ScenarioType.HOT_STANDBY) {
       const { updatedNodes: nodesAfterElection, logEvents: electionEvents } = 
         electNewPrimaryInRegion(updatedNodes, updatedNodes.find(n => n.role === NodeRole.PRIMARY)?.region || '');
@@ -1158,8 +1194,8 @@ export const toggleNodeStatus = (nodes: MongoNode[], nodeId: string, scenarioTyp
       finalNodes = nodesAfterElection;
       logEvents.push(...electionEvents);
     }
-  } else if (nodeComingUp && hasQuorum && !hasPrimary) {
-    // Node came back up and we now have quorum but no primary - elect one
+  } else if (nodeComingUp && hasMajority && !hasPrimary) {
+    // Node came back up and we now have majority but no primary - elect one
     if (scenarioType === ScenarioType.HOT_STANDBY) {
       const { updatedNodes: nodesAfterElection, logEvents: electionEvents } = 
         electNewPrimaryInRegion(updatedNodes, changedNode.region);
@@ -1171,7 +1207,7 @@ export const toggleNodeStatus = (nodes: MongoNode[], nodeId: string, scenarioTyp
       finalNodes = nodesAfterElection;
       logEvents.push(...electionEvents);
     }
-  } else if (nodeComingUp && hasQuorum && hasPrimary && scenarioType === ScenarioType.MULTI_DC && deploymentMode === DeploymentMode.ATLAS) {
+  } else if (nodeComingUp && hasMajority && hasPrimary && scenarioType === ScenarioType.MULTI_DC && deploymentMode === DeploymentMode.ATLAS) {
     // Special case for Atlas Multi-DC: Node coming back online might have higher priority than current primary
     const currentPrimary = updatedNodes.find(n => n.role === NodeRole.PRIMARY);
     const changedNodeInPrimaryDC1 = changedNode && changedNode.region === 'primary-dc1';
@@ -1204,7 +1240,7 @@ export const getRecoveryActions = (scenario: ScenarioType, nodes: MongoNode[], d
   switch (scenario) {
     case ScenarioType.SINGLE_REGION_NO_DR:
       // Single region with no DR - no recovery actions available
-      // The cluster relies on automatic primary election if quorum is maintained
+      // The cluster relies on automatic primary election if majority is maintained
       return [];
 
     case ScenarioType.BASIC_DR:
@@ -1300,16 +1336,16 @@ export const getRecoveryActions = (scenario: ScenarioType, nodes: MongoNode[], d
       return [];
 
     case ScenarioType.HOT_STANDBY:
-      // Show recovery action only if DC cluster lost quorum (2+ nodes down)
+      // Show recovery action only if DC cluster lost majority (2+ nodes down)
       const dcNodesHotStandby = nodes.filter(node => node.region === 'dc-cluster');
       const dcUpVotingNodes = dcNodesHotStandby.filter(
         node => node.status === NodeStatus.UP && node.votingRights === VotingRights.VOTING
       );
       const dcTotalVotingNodes = dcNodesHotStandby.filter(node => node.votingRights === VotingRights.VOTING).length;
-      const dcHasQuorum = dcUpVotingNodes.length > dcTotalVotingNodes / 2;
+      const dcHasMajority = dcUpVotingNodes.length > dcTotalVotingNodes / 2;
       
-      // Only show recovery action when DC cluster loses quorum (cannot elect primary)
-      if (!dcHasQuorum) {
+      // Only show recovery action when DC cluster loses majority (cannot elect primary)
+      if (!dcHasMajority) {
         return [
           {
             id: 'repoint-application',
