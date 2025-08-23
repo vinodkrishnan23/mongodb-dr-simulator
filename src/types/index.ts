@@ -55,7 +55,7 @@ export enum EventType {
   RECOVERY_ACTION = 'recovery_action',
   STATUS_CHANGE = 'status_change',
   ELECTION = 'election',
-  QUORUM = 'quorum',
+  MAJORITY = 'majority',
   WARNING = 'warning',
   SUCCESS = 'success',
 }
@@ -137,7 +137,7 @@ export interface ReplicaSetStatus {
   name: string;
   region: string;
   isOperational: boolean;
-  hasQuorum: boolean;
+  hasMajority: boolean;
   canWrite: boolean;
   votingNodes: number; // Online voting nodes
   totalVotingNodes: number; // Total voting nodes in configuration (including failed)
@@ -148,7 +148,7 @@ export interface ReplicaSetStatus {
 
 export interface ClusterStatus {
   isOperational: boolean;
-  hasQuorum: boolean;
+  hasMajority: boolean;
   canWrite: boolean;
   votingNodes: number; // Online voting nodes
   totalVotingNodes: number; // Total voting nodes in configuration (including failed)

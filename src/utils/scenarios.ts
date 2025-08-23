@@ -12,7 +12,7 @@ import {
 export const singleRegionNoDRScenario: Scenario = {
   id: ScenarioType.SINGLE_REGION_NO_DR,
   name: '1 Region No DR',
-  description: '3-node replica set in single region: operational with quorum (2+ nodes), read-only without quorum (1 node), down when all nodes fail',
+  description: '3-node replica set in single region: operational with majority (2+ nodes), read-only without majority (1 node), down when all nodes fail',
   regions: [
     {
       id: 'single-region',

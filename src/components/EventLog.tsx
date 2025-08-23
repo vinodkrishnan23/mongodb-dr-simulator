@@ -24,7 +24,7 @@ const EventLog: React.FC<EventLogProps> = ({ events, maxHeight = 'max-h-96' }) =
         return <Clock className="w-4 h-4 text-gray-500" />;
       case EventType.ELECTION:
         return <Crown className="w-4 h-4 text-yellow-500" />;
-      case EventType.QUORUM:
+      case EventType.MAJORITY:
         return <Zap className="w-4 h-4 text-orange-500" />;
       case EventType.WARNING:
         return <AlertTriangle className="w-4 h-4 text-yellow-600" />;
@@ -47,7 +47,7 @@ const EventLog: React.FC<EventLogProps> = ({ events, maxHeight = 'max-h-96' }) =
         return 'border-l-4 border-green-700 bg-white';
       case EventType.ELECTION:
         return 'border-l-4 border-green-600 bg-white';
-      case EventType.QUORUM:
+      case EventType.MAJORITY:
         return 'border-l-4 border-green-700 bg-white';
       case EventType.WARNING:
         return 'border-l-4 border-green-800 bg-white';
@@ -79,8 +79,8 @@ const EventLog: React.FC<EventLogProps> = ({ events, maxHeight = 'max-h-96' }) =
         return 'STATUS';
       case EventType.ELECTION:
         return 'ELECTION';
-      case EventType.QUORUM:
-        return 'QUORUM';
+      case EventType.MAJORITY:
+        return 'MAJORITY';
       case EventType.WARNING:
         return 'WARNING';
       case EventType.SUCCESS:
